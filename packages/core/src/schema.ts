@@ -122,7 +122,7 @@ export const SpriteSpecSchema = z.object({
   view: z.enum(["side", "front", "three-quarter", "top-down"]).default("side"),
   light: z.enum(["top-left", "top-right", "top"]).default("top-left"),
   notes: z.string().default(""),
-  /** Sheet id Claude should create (letters, digits, - and _). */
+  /** Sheet id the MCP client or the in-app generator should create (letters, digits, - and _). */
   sheetId: z.string().regex(/^[a-z0-9_-]+$/i, "Use letters, numbers, - and _"),
 });
 
@@ -133,7 +133,7 @@ export const RequestSchema = z.object({
   status: z.enum(["pending", "in_progress", "done", "failed"]).default("pending"),
   spec: SpriteSpecSchema,
   prompt: z.string(),
-  /** Set when Claude finishes: the sheet that holds the result. */
+  /** Set when the request is done: the sheet that holds the result. */
   resultSheetId: z.string().optional(),
   note: z.string().optional(),
 });

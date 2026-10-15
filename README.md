@@ -1,89 +1,154 @@
 # Mon Spire Editor
 
-Sprite asset manager, pixel editor and tile-map editor, plus an MCP server so an AI can build the same
-project from the outside. Everything works on a plain folder of JSON + PNG files, so projects diff and
-merge in git and the editor and the MCP server can be used at the same time.
+A sprite, pixel-art and tilemap editor whose project is a plain folder, so **you and an AI client can edit the same
+project at the same time**. It ships as a desktop app (Tauri) and also runs in the browser for development.
 
-```
-packages/
-  core/        data model (zod), ProjectStore, undo/redo commands, drawing helpers  — no UI, no Node APIs
-  editor/      React + Vite UI; wrapped by Tauri for the desktop app (src-tauri/)
-  mcp-server/  MCP server (stdio) built on core
-projects/demo  sample project
-```
+![Start screen: a map paints itself while two cursors work on it](docs/images/welcome.png)
 
-## Run it
+- **Draw** pixel art by hand (pencil, line, rect, fill, mirror, flip, tiled preview), slice sheets into frames, build
+  tilesets and animations.
+- **Lay out maps** with tile, collision and object layers, an autotile terrain brush, block stamps, and entities that can
+  play animations.
+- **Let an AI help** over [MCP](https://modelcontextprotocol.io): the desktop app has an MCP server built in (30 tools), so
+  any MCP client can draw sprites, build maps and read results while you watch the editor update.
+- **Generate sprites from a prompt**: a prompt builder with 48 presets and 8 style packs, then either queue the request for
+  your MCP client or let the app draw it itself with your Anthropic API key.
+- **Export** to Tiled (`.tmj`/`.tsj`) and to an engine-ready sprite atlas (JSON hash, as Phaser and PixiJS read).
+
+| Map editor | Create (prompt builder) |
+|---|---|
+| ![Map editor with animated trees](docs/images/map.png) | ![Create tab with presets and the generated prompt](docs/images/create.png) |
+
+## Quick start
+
+You need [Node.js](https://nodejs.org) (developed on v24) and [pnpm](https://pnpm.io). The desktop app also needs
+[Rust](https://rustup.rs) and, on macOS, the Xcode command line tools.
 
 ```bash
 pnpm install
-pnpm test                         # core + mcp-server unit tests
-MSE_PROJECT=$PWD/projects/demo pnpm dev     # browser editor on http://localhost:5173
-pnpm desktop                      # Tauri desktop app (needs Rust); pick a project folder on first launch
-pnpm desktop:build                # packaged app
 ```
 
-In the browser the editor reads/writes the folder given by `MSE_PROJECT` through a small dev-server
-plugin (`packages/editor/server/project-fs.ts`, confined to that folder). The desktop app talks to the
-disk directly via Tauri's fs plugin, limited to the folder you choose.
+**In the browser** (fastest way to look around; edits the folder you point it at):
 
-## Editor
+```bash
+MSE_PROJECT=$PWD/projects/demo pnpm dev      # http://localhost:5173
+```
+
+**As a desktop app:**
+
+```bash
+pnpm desktop                  # run in development
+pnpm desktop:build            # packaged app: packages/editor/src-tauri/target/release/bundle/
+```
+
+On first launch choose a project folder (a folder with `project.json`; an empty folder is offered as a new project).
+`projects/demo` is a ready-made example with a town map, apple trees and a swaying tree animation.
+
+## Connect an MCP client
+
+The desktop app listens on `http://127.0.0.1:17877/mcp` while it is open. The **MCP** chip in the top bar opens a panel
+with the address, the last request, and Restart, Stop and Start. Nothing to install:
+
+```bash
+claude mcp add --transport http spire-editor http://127.0.0.1:17877/mcp
+```
+
+Then ask your client for something, for example *"Draw a 32×32 treasure chest in warm browns, preview it, and fix anything
+that looks off."* The sprite appears in the editor as it is drawn. The full walkthrough, other clients, the security model
+and troubleshooting are in the **[MCP guide](docs/mcp-guide.md)**; every tool is listed in the
+**[tool reference](docs/mcp-tools.md)**.
+
+From a checkout, without the desktop app, the same tools run over stdio. The repo's `.mcp.json` already registers them for
+Claude Code when you open the repo root; to run the server by hand:
+
+```bash
+pnpm mcp projects/demo        # path is relative to the repo root; use an absolute path for your own project
+```
+
+## Using the editor
 
 | Tab | What you can do |
 |---|---|
-| Assets | import PNG sheets, slice by grid (margin/spacing), build tilesets (collision, tags, terrain), build and preview animations |
-| Pixel | draw by hand: pencil, eraser, line, rect (Shift = outline), fill, picker, brush size, palette, undo/redo; frame grid overlay; new image or edit a sheet |
-| Map | tile/collision/object layers (visibility, lock, reorder), brush/eraser/line/rect/fill/picker, entities with JSON props, wheel zoom, space/right-drag pan, undo/redo |
+| **Create** | Describe a sprite, pick a preset and style pack, copy the prompt, queue it for an MCP client, or generate it in the app. |
+| **Assets** | Import PNG sheets, slice into frames, build tilesets (collision, tags, autotile terrain and neighbour mask), build and preview animations, export an atlas, delete sheets. |
+| **Pixel** | Draw on a sheet's image or a new image: pencil, eraser, line, rect, fill, picker, brush size, palette, mirror X/Y, flip, 3×3 tiled preview, frame grid overlay. |
+| **Map** | Tile, collision and object layers (hide, lock, reorder), brush, terrain, eraser, line, rect, fill, picker, entity; block stamps; zoom and pan; export to Tiled. |
 
-Keys: `B` brush/pencil, `E` eraser, `L` line, `R` rect, `G` fill, `I` picker, `N` entity (map), `Ctrl/⌘+Z` undo,
-`Ctrl/⌘+Shift+Z` or `Ctrl+Y` redo. Edits auto-save after 300 ms.
+![Pixel editor with the tree sprite and its frame grid](docs/images/pixel.png)
 
-Changes made on disk (by the MCP server, git, another tool) are picked up by a file watcher and reloaded.
-A document with unsaved edits is never overwritten by an external change.
+Keys: `B` brush/pencil · `E` eraser · `L` line · `R` rect (hold Shift for an outline) · `G` fill · `I` picker ·
+`T` terrain (map) · `N` entity (map) · `Ctrl/⌘+Z` undo · `Shift+Ctrl/⌘+Z` or `Ctrl+Y` redo · mouse wheel zooms the map ·
+hold Space or use the right/middle button to pan · Shift-click in the tile palette selects a block to stamp.
 
-## MCP server
+Edits save automatically. If something outside the editor changes a file (an MCP client, git, another tool), the editor
+reloads it and the top bar says which file changed.
 
-`.mcp.json` registers it for Claude Code. Manually: `pnpm --filter @mse/mcp-server start <project-folder>`
-(or set `MSE_PROJECT`).
+## Project layout
 
-| Tool | Purpose |
+```
+packages/
+  core/         data model (zod), project store, undo/redo, drawing, autotile, presets, exporters. No UI, no Node APIs.
+  editor/       React + Vite app; src-tauri/ is the desktop shell (Rust)
+  mcp-server/   the MCP tools, and a stdio entry point that serves them
+projects/demo   example project
+docs/           guides and references
+e2e/            browser and desktop end-to-end tests (Python + Playwright)
+```
+
+A project on disk:
+
+```
+project.json         index of every sheet, animation, tileset, map and request
+assets/*.png         the art
+sheets/ animations/ tilesets/ maps/ requests/    one JSON file per item
+export/              generated by the exporters
+```
+
+Details and examples are in **[docs/project-format.md](docs/project-format.md)**.
+
+## Documentation
+
+| Document | For |
 |---|---|
-| `project_info`, `project_validate` | overview; check every reference in the project |
-| `sprite_import`, `sprite_slice`, `sheet_get` | PNG → sheet → frames |
-| `tileset_create`, `tile_set_properties` | tileset from frames; collision / tags |
-| `animation_create` | frames + fps or per-frame durations |
-| `map_create`, `map_get`, `map_set_tiles`, `map_fill`, `layer_add`, `entity_place` | build maps (batched edits) |
-| `map_validate`, `map_render_preview` | verify, and *look at* the result (returns a PNG) |
-| `export_tiled` | write `export/tiled/<map>.tmj` + `.tsj` for Tiled / engines with Tiled loaders |
+| [MCP guide](docs/mcp-guide.md) | What MCP is, how this app uses it, connecting clients, worked examples, troubleshooting |
+| [MCP tool reference](docs/mcp-tools.md) | Every tool and prompt with its parameters (generated from the server) |
+| [Project format](docs/project-format.md) | The files the editor reads and writes |
+| [Architecture](docs/architecture.md) | How the pieces fit together, and why |
+| [Market notes and roadmap](docs/market-and-roadmap.md) | Similar tools, what this app borrows, what is next |
 
-## Project format
+## Development
 
-```
-project.json            index: ids of sheets / animations / tilesets / maps
-assets/*.png            art
-sheets/<id>.json        image path, grid settings, frames {id, rect, pivot}
-tilesets/<id>.json      tiles[] → frameId, collision, tags, terrain (reserved for autotile)
-animations/<id>.json    frames[] {frameId, durationMs}, loop, tags
-maps/<id>.json          width, height, tileSize, layers[]; tile number n = tilesets.tiles[n-1], 0 = empty
+```bash
+pnpm typecheck            # all packages
+pnpm test                 # unit tests: core, mcp-server
+pnpm e2e                  # browser end-to-end suites (needs Python 3 with playwright and Pillow, and Google Chrome)
+cd packages/editor/src-tauri && cargo test      # Rust: Keychain round trip, port rebind on restart
+pnpm docs:tools           # regenerate docs/mcp-tools.md after changing a tool (a test fails if you forget)
 ```
 
-Schemas live in `packages/core/src/schema.ts` and are validated on every read and write.
+`pnpm e2e` seeds a throwaway project and starts its own dev server for each suite, so it never touches your projects.
+Suites: `boot` (the production bundle must start), `editor_basics`, `mcp_and_assets`, `features`, `create`, `create_ai`
+(uses a mock of the Anthropic API). Run one with `python3 e2e/run.py create.py`.
 
-## Known limits
+### Commits
 
-- No autotile yet (the `terrain` field is reserved so it can be added without migrating files).
-- Tiled export (TMJ/TSJ) is one-way; there is no Tiled import.
-- Editor and MCP writing the same file at the same moment is last-writer-wins at whole-file level.
-- Re-slicing a sheet replaces frame ids; run `project_validate` afterwards.
-- Deleting a sheet/tileset/animation leaves its PNG on disk by design.
-
-## Commits
-
-Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>[(scope)]: <subject>`,
-for example `feat(create): add sprite presets` or `fix(ui): make the MCP popup scroll`. Types: `feat`, `fix`, `docs`,
-`style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Keep the first line to 72 characters.
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>[(scope)]: <subject>`, for
+example `feat(create): add sprite presets` or `fix(ui): make the MCP popup scroll`. Types: `feat`, `fix`, `docs`, `style`,
+`refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Keep the first line to 72 characters.
 
 A `commit-msg` hook in `.githooks/` rejects anything else. Turn it on once per clone:
 
 ```bash
 git config core.hooksPath .githooks
 ```
+
+## Known limits
+
+- The editor and an MCP client writing the same file at the same instant are last-writer-wins at whole-file level.
+- MCP edits are not on the editor's undo stack (they are separate file writes).
+- Autotile uses a 4-neighbour mask (16 tiles per terrain), not the 47-tile blob set.
+- Tiled export is one-way; there is no Tiled import.
+- The desktop app's Restart/Stop/Start buttons, Keychain access and the in-app generator's network calls are covered by unit
+  tests, the browser suites and a Rust test, but not yet by an automated test of the packaged app (see the header of
+  `e2e/desktop.py`).
+- Deleting a sheet removes its animations and PNG but is refused while a tileset uses it, because maps reference those tiles.
