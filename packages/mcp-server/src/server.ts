@@ -5,6 +5,10 @@ import {
   History,
   MapSchema,
   exportTiled,
+  buildSpritePrompt,
+  slugify,
+  SpriteSpecSchema,
+  type SpriteRequest,
   exportAtlas,
   planAutotile,
   stampCells,
@@ -339,6 +343,26 @@ export function createServer(store: ProjectStore, fs: FileSystemAdapter) {
     safe(async ({ id }) => {
       const s = await store.loadSheet(id);
       return text({ ...s, frames: s.frames.map((f) => ({ id: f.id, name: f.name, rect: f.rect })) });
+    }),
+  );
+
+  server.registerTool(
+    "sheet_delete",
+    {
+      description:
+        "Delete a sprite sheet, the animations built from it, and (unless deleteImage is false) its PNG. Refuses while a tileset uses the sheet; delete that first.",
+      inputSchema: {
+        id: z.string(),
+        deleteImage: z.boolean().optional().describe("Also delete assets/<id>.png (default true)"),
+      },
+    },
+    safe(async ({ id, deleteImage }) => {
+      const r = await store.removeSheet(id, { deleteImage });
+      return text(
+        `Deleted sheet "${id}"` +
+          (r.animations.length ? ` and animation(s) ${r.animations.join(", ")}` : "") +
+          (r.imageDeleted ? " and its PNG." : "."),
+      );
     }),
   );
 
@@ -682,6 +706,134 @@ export function createServer(store: ProjectStore, fs: FileSystemAdapter) {
       await fs.writeText(`${store.root}/export/atlas/${sheetId}.json`, JSON.stringify(atlas, null, 2) + "\n");
       await fs.writeBinary(`${store.root}/export/atlas/${png}`, await fs.readBinary(`${store.root}/${sheet.image}`));
       return text({ written: [`export/atlas/${sheetId}.json`, `export/atlas/${png}`], frames: sheet.frames.length, animations: Object.keys(atlas.animations) });
+    }),
+  );
+
+  // ---- sprite requests: the in-app prompt builder queues work, Claude picks it up here ----------
+  const nowIso = () => new Date().toISOString();
+  const listRequests = async () => {
+    const project = await store.loadProject();
+    const out: SpriteRequest[] = [];
+    for (const id of project.requests) {
+      try {
+        out.push(await store.loadRequest(id));
+      } catch {
+        /* an unreadable request file is skipped here; project_validate-style tools report broken files */
+      }
+    }
+    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  };
+  const summary = (r: SpriteRequest) => ({
+    id: r.id,
+    status: r.status,
+    subject: r.spec.subject,
+    sheetId: r.spec.sheetId,
+    size: `${r.spec.width}x${r.spec.height}`,
+    frames: r.spec.frames,
+    createdAt: r.createdAt,
+    ...(r.resultSheetId ? { resultSheetId: r.resultSheetId } : {}),
+    ...(r.note ? { note: r.note } : {}),
+  });
+
+  server.registerTool(
+    "request_list",
+    {
+      description:
+        "List sprite requests the user queued from the editor's prompt builder (oldest first). Check this when asked to 'do the pending requests'.",
+      inputSchema: { status: z.enum(["pending", "in_progress", "done", "failed"]).optional() },
+    },
+    safe(async ({ status }) => text((await listRequests()).filter((r) => !status || r.status === status).map(summary))),
+  );
+
+  server.registerTool(
+    "request_claim",
+    {
+      description:
+        "Take the oldest pending sprite request (or a specific id) and mark it in progress. Returns the full prompt and spec: follow that prompt, then call request_complete. Says so if nothing is pending.",
+      inputSchema: { id: z.string().optional() },
+    },
+    safe(async ({ id }) => {
+      const all = await listRequests();
+      const r = id ? all.find((x) => x.id === id) : all.find((x) => x.status === "pending");
+      if (id && !r) throw new Error(`No request "${id}"`);
+      if (!r) return text("No pending requests.");
+      if (r.status === "done") throw new Error(`Request "${r.id}" is already done (sheet "${r.resultSheetId}")`);
+      await store.saveRequest({ ...r, status: "in_progress", updatedAt: nowIso() });
+      return text({ id: r.id, sheetId: r.spec.sheetId, spec: r.spec, prompt: r.prompt });
+    }),
+  );
+
+  server.registerTool(
+    "request_complete",
+    {
+      description: "Mark a sprite request done once its sheet exists. The editor shows it as finished and links to the result.",
+      inputSchema: { id: z.string(), sheetId: z.string().optional().describe("Defaults to the sheet id in the request"), note: z.string().optional() },
+    },
+    safe(async ({ id, sheetId, note }) => {
+      const r = (await listRequests()).find((x) => x.id === id);
+      if (!r) throw new Error(`No request "${id}"`);
+      const sheet = sheetId ?? r.spec.sheetId;
+      if (!(await store.loadProject()).sheets.includes(sheet)) throw new Error(`Sheet "${sheet}" does not exist yet; create and draw it first`);
+      await store.saveRequest({ ...r, status: "done", resultSheetId: sheet, note, updatedAt: nowIso() });
+      return text(`Request "${id}" done: sheet "${sheet}".`);
+    }),
+  );
+
+  server.registerTool(
+    "request_fail",
+    {
+      description: "Mark a sprite request as failed with a reason the user can read (for example: the subject is unclear).",
+      inputSchema: { id: z.string(), reason: z.string().min(1) },
+    },
+    safe(async ({ id, reason }) => {
+      const r = (await listRequests()).find((x) => x.id === id);
+      if (!r) throw new Error(`No request "${id}"`);
+      await store.saveRequest({ ...r, status: "failed", note: reason, updatedAt: nowIso() });
+      return text(`Request "${id}" marked failed.`);
+    }),
+  );
+
+  server.registerPrompt(
+    "draw_sprite",
+    {
+      title: "Draw a sprite",
+      description: "A complete brief for drawing one sprite (or a short animation) with this editor's tools.",
+      argsSchema: {
+        subject: z.string().describe("What to draw, e.g. 'a red slime with a tiny crown'"),
+        size: z.string().optional().describe("Pixels per frame, '32' or '32x24' (default 32)"),
+        frames: z.string().optional().describe("Number of animation frames, 1-16 (default 1)"),
+        style: z.string().optional().describe("nes, gameboy, snes or modern (default snes)"),
+        sheet_id: z.string().optional().describe("Id for the new sheet (default made from the subject)"),
+      },
+    },
+    ({ subject, size, frames, style, sheet_id }) => {
+      const [w, h] = (size ?? "32").toLowerCase().split("x").map((n) => parseInt(n, 10));
+      const parsed = SpriteSpecSchema.safeParse({
+        subject,
+        width: w || 32,
+        height: h || w || 32,
+        frames: frames ? parseInt(frames, 10) : 1,
+        style: style ?? "snes",
+        sheetId: sheet_id ?? slugify(subject),
+      });
+      const text = parsed.success ? buildSpritePrompt(parsed.data) : `Could not build the brief: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`;
+      return { messages: [{ role: "user" as const, content: { type: "text" as const, text } }] };
+    },
+  );
+
+  server.registerPrompt(
+    "do_pending_requests",
+    { title: "Do the queued sprite requests", description: "Work through every sprite request queued in the editor's prompt builder." },
+    () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: "Call request_list with status pending. For each one: call request_claim, follow the returned prompt exactly (draw, preview, refine), then call request_complete. If a request cannot be done, call request_fail with a reason. Tell me what you made when you are finished.",
+          },
+        },
+      ],
     }),
   );
 

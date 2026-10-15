@@ -80,7 +80,7 @@ with sync_playwright() as pw:
     pg.click(".rail >> text=Pixel")
     pg.fill("input[placeholder=id]", "sym")
     pg.locator(".side .row input[type=number]").nth(0).fill("8"); pg.locator(".side .row input[type=number]").nth(1).fill("8")
-    pg.click("button:has-text('Create')"); pg.wait_for_selector("canvas.checker"); time.sleep(0.8)
+    pg.click(".side button:has-text('Create')"); pg.wait_for_selector("canvas.checker"); time.sleep(0.8)
     pg.click("button:has-text('Mirror X')")
     cb = pg.locator("canvas.checker").first.bounding_box(); zz = cb["width"] / 8
     pg.mouse.click(cb["x"] + 1.5 * zz, cb["y"] + 2.5 * zz); time.sleep(1.2)
@@ -101,6 +101,15 @@ with sync_playwright() as pw:
     atlas = read("export/atlas/pulse.json") if os.path.exists(f"{P}/export/atlas/pulse.json") else {}
     check("atlas json written with frames and animation", "pulse_1" in atlas.get("frames", {}) and "pulse" in atlas.get("animations", {}), str(atlas)[:120])
     check("atlas png copied", os.path.exists(f"{P}/export/atlas/pulse.png"))
+    # deleting sheets from the list: confirm dialogs are auto-accepted
+    pg.on("dialog", lambda d: d.accept())
+    pg.click(".list li:has-text('blob') .x"); pg.wait_for_timeout(600)
+    check("a sheet used by a tileset cannot be deleted, with the reason shown", "used by tileset blob-ts" in pg.inner_text(".side") and "blob" in read("project.json")["sheets"], pg.inner_text(".side")[-160:])
+    check("the delete button is on every sheet row", pg.locator(".list li .x").count() >= 2)
+    png_before = os.path.exists(f"{P}/assets/pulse.png")
+    pg.click(".list li:has-text('pulse') .x"); pg.wait_for_timeout(1200)  # not time.sleep: only Playwright calls dispatch the confirm() dialog event
+    pr = read("project.json")
+    check("deleting a free sheet removes it, its animation and its PNG", png_before and "pulse" not in pr["sheets"] and "pulse" not in pr["animations"] and not os.path.exists(f"{P}/assets/pulse.png") and not os.path.exists(f"{P}/sheets/pulse.json"), str(pr["sheets"]))
     pg.click("nav.subtabs >> text=tilesets"); pg.click(".list li:has-text('blob-ts')"); pg.click(".tilegrid button >> nth=2")
     cbs = pg.locator("fieldset.mask input[type=checkbox]")
     check("mask editor shows tile 3 as east-only (mask 2)", cbs.nth(1).is_checked() and not cbs.nth(0).is_checked() and not cbs.nth(2).is_checked())

@@ -9,10 +9,10 @@ use std::{
     io::Read,
     sync::{
         atomic::{AtomicU64, Ordering},
-        mpsc, Mutex,
+        mpsc, Arc, Mutex,
     },
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_fs::FsExt;
@@ -25,6 +25,9 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(120);
 #[derive(Default)]
 struct Mcp {
     port: Mutex<Option<u16>>,
+    /// The running listener, kept so it can be stopped (`unblock`) for restart/stop.
+    server: Mutex<Option<Arc<tiny_http::Server>>>,
+    started_ms: Mutex<Option<u64>>,
     pending: Mutex<HashMap<u64, mpsc::Sender<String>>>,
     next: AtomicU64,
 }
@@ -32,9 +35,51 @@ struct Mcp {
 /// Folder passed as `--project <dir>` (lets scripts and tests open a project without the picker).
 struct InitialProject(Option<String>);
 
+#[derive(serde::Serialize)]
+struct McpStatus {
+    running: bool,
+    port: Option<u16>,
+    /// Unix time in ms when the listener started, for "up for ..." in the UI.
+    started_ms: Option<u64>,
+}
+
+fn status(state: &Mcp) -> McpStatus {
+    let port = *state.port.lock().unwrap();
+    McpStatus { running: port.is_some(), port, started_ms: *state.started_ms.lock().unwrap() }
+}
+
 #[tauri::command]
 fn mcp_port(state: State<Mcp>) -> Option<u16> {
     *state.port.lock().unwrap()
+}
+
+#[tauri::command]
+fn mcp_status(state: State<Mcp>) -> McpStatus {
+    status(&state)
+}
+
+/// Stop listening. Requests already being answered finish; new connections are refused.
+#[tauri::command]
+fn mcp_stop(state: State<Mcp>) -> McpStatus {
+    stop_mcp_server(&state);
+    status(&state)
+}
+
+#[tauri::command]
+fn mcp_start(app: AppHandle, state: State<Mcp>) -> McpStatus {
+    if state.port.lock().unwrap().is_none() {
+        start_mcp_server(app, None);
+    }
+    status(&state)
+}
+
+/// Stop and listen again, on the same port when it frees up in time (so saved client configs keep working).
+#[tauri::command]
+fn mcp_restart(app: AppHandle, state: State<Mcp>) -> McpStatus {
+    let previous = *state.port.lock().unwrap();
+    stop_mcp_server(&state);
+    start_mcp_server(app, previous);
+    status(&state)
 }
 
 /// The webview's answer to an `mcp-request` event. An empty body means "notification, nothing to return".
@@ -114,20 +159,37 @@ fn handle(app: AppHandle, port: u16, mut req: tiny_http::Request) {
     }
 }
 
-fn start_mcp_server(app: AppHandle) {
-    for port in BASE_PORT..BASE_PORT + PORT_TRIES {
-        if let Ok(server) = tiny_http::Server::http(("127.0.0.1", port)) {
-            *app.state::<Mcp>().port.lock().unwrap() = Some(port);
-            thread::spawn(move || {
-                for req in server.incoming_requests() {
-                    let app = app.clone();
-                    thread::spawn(move || handle(app, port, req));
-                }
-            });
-            return;
-        }
+fn stop_mcp_server(state: &Mcp) {
+    if let Some(server) = state.server.lock().unwrap().take() {
+        server.unblock(); // ends the accept loop; the socket closes once that thread drops its handle
     }
-    eprintln!("Mon Spire Editor: no free port in {}..{} for the MCP server", BASE_PORT, BASE_PORT + PORT_TRIES);
+    *state.port.lock().unwrap() = None;
+    *state.started_ms.lock().unwrap() = None;
+}
+
+/// Listen on `preferred` if given (retrying briefly while the old socket closes), else the first free port from BASE_PORT.
+fn start_mcp_server(app: AppHandle, preferred: Option<u16>) {
+    let try_bind = |port: u16| tiny_http::Server::http(("127.0.0.1", port)).ok();
+    let bound = preferred
+        .and_then(|p| {
+            (0..15).find_map(|_| try_bind(p).map(|s| (p, s)).or_else(|| (thread::sleep(Duration::from_millis(100)), None).1))
+        })
+        .or_else(|| (BASE_PORT..BASE_PORT + PORT_TRIES).find_map(|p| try_bind(p).map(|s| (p, s))));
+    let Some((port, server)) = bound else {
+        eprintln!("Mon Spire Editor: no free port in {}..{} for the MCP server", BASE_PORT, BASE_PORT + PORT_TRIES);
+        return;
+    };
+    let server = Arc::new(server);
+    let state = app.state::<Mcp>();
+    *state.server.lock().unwrap() = Some(server.clone());
+    *state.port.lock().unwrap() = Some(port);
+    *state.started_ms.lock().unwrap() = SystemTime::now().duration_since(UNIX_EPOCH).ok().map(|d| d.as_millis() as u64);
+    thread::spawn(move || {
+        for req in server.incoming_requests() {
+            let app = app.clone();
+            thread::spawn(move || handle(app, port, req));
+        }
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -146,15 +208,44 @@ pub fn run() {
         .plugin(tauri_plugin_persisted_scope::init())
         .manage(Mcp::default())
         .manage(InitialProject(initial.clone()))
-        .invoke_handler(tauri::generate_handler![mcp_port, mcp_reply, initial_project])
+        .invoke_handler(tauri::generate_handler![mcp_port, mcp_status, mcp_stop, mcp_start, mcp_restart, mcp_reply, initial_project])
         .setup(move |app| {
             if let Some(dir) = &initial {
                 // an explicitly passed folder is trusted like one picked in the dialog
                 let _ = app.fs_scope().allow_directory(dir, true);
             }
-            start_mcp_server(app.handle().clone());
+            start_mcp_server(app.handle().clone(), None);
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running Mon Spire Editor");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Restart relies on two facts: `unblock` ends the accept loop, and the same port can then be bound again.
+    #[test]
+    fn stopping_a_listener_frees_its_port_for_a_restart() {
+        let port = 17990;
+        let server = Arc::new(tiny_http::Server::http(("127.0.0.1", port)).expect("bind"));
+        let worker = {
+            let server = server.clone();
+            thread::spawn(move || server.incoming_requests().count()) // returns when unblocked
+        };
+        thread::sleep(Duration::from_millis(100));
+        server.unblock();
+        assert_eq!(worker.join().expect("accept loop ends"), 0);
+        drop(server);
+
+        // same retry the app uses: the OS may take a moment to release the socket
+        let rebound = (0..15).find_map(|_| {
+            tiny_http::Server::http(("127.0.0.1", port)).ok().or_else(|| {
+                thread::sleep(Duration::from_millis(100));
+                None
+            })
+        });
+        assert!(rebound.is_some(), "port {port} was not released after unblock");
+    }
 }

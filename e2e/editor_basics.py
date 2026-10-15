@@ -65,7 +65,7 @@ with sync_playwright() as pw:
     check("flood fill saved", filled > 40, f"filled={filled}")
 
     # Layer add + entity
-    pg.select_option(".row select", "object")
+    pg.select_option("select:has(option[value=object])", "object")
     pg.fill(".row input[placeholder=name]", "npcs")
     pg.click(".row >> text=Add"); time.sleep(0.2)
     pg.click("button:has-text('Entity')")
@@ -87,7 +87,7 @@ with sync_playwright() as pw:
     pg.fill("input[placeholder=id]", "hero")
     pg.locator(".side .row input[type=number]").nth(0).fill("8")
     pg.locator(".side .row input[type=number]").nth(1).fill("8")
-    pg.click("button:has-text('Create')")
+    pg.click(".side button:has-text('Create')")
     pg.wait_for_selector("canvas.checker")
     for _ in range(40):
         if os.path.exists(f"{P}/assets/hero.png"): break

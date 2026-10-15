@@ -71,7 +71,7 @@ with sync_playwright() as pw:
     pg.click("nav.subtabs >> text=animations")
     pg.fill("input[placeholder=id]", "blink"); pg.select_option(".side select", "extra")
     pg.click(".tilegrid button >> nth=0"); pg.click(".tilegrid button >> nth=1")
-    pg.click("button:has-text('Create')"); time.sleep(1)
+    pg.click(".side button:has-text('Create')"); time.sleep(1)
     a = read("animations/blink.json")
     check("animation saved with 2 steps @125ms", [f["frameId"] for f in a["frames"]] == ["extra_0", "extra_1"] and a["frames"][0]["durationMs"] == 125, str(a))
     pg.screenshot(path=f"{S}/shot-anim.png")

@@ -9,6 +9,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { ProjectStore } from "@mse/core";
 import { createServer } from "@mse/mcp-server/server";
+import { useMcp } from "../state/mcp";
 import { projectRoot } from "../state/project";
 import { TauriFs } from "./tauri-fs";
 
@@ -80,10 +81,37 @@ export async function handleMcpBody(body: string): Promise<string> {
 
 let started = false;
 
+/** What a request is, for the status panel: the tool name for tools/call, else the method. */
+function describe(body: string): string | undefined {
+  try {
+    const m = JSON.parse(body);
+    const one = Array.isArray(m) ? m[0] : m;
+    return one?.method === "tools/call" ? String(one.params?.name) : one?.method;
+  } catch {
+    return undefined;
+  }
+}
+
+/** First error message in a reply, from a JSON-RPC error or a tool result flagged isError. */
+function errorOf(reply: string): string | undefined {
+  try {
+    const m = JSON.parse(reply);
+    for (const r of Array.isArray(m) ? m : [m]) {
+      if (r?.error) return String(r.error.message ?? "error");
+      if (r?.result?.isError) return String(r.result.content?.[0]?.text ?? "tool error");
+    }
+  } catch {
+    /* empty reply for notifications */
+  }
+  return undefined;
+}
+
 /** Listen for requests from the Rust HTTP endpoint. Safe to call more than once. */
 export async function startMcpHost() {
   if (started) return;
   started = true;
+  void useMcp.getState().refresh();
+  setInterval(() => void useMcp.getState().refresh(), 3000);
   await listen<{ id: number; body: string }>("mcp-request", async (ev) => {
     let reply: string;
     try {
@@ -91,6 +119,9 @@ export async function startMcpHost() {
     } catch (e) {
       reply = JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32603, message: e instanceof Error ? e.message : String(e) } });
     }
+    const method = describe(ev.payload.body);
+    // plain notifications (initialized, ...) are not worth showing as activity
+    if (method && !method.startsWith("notifications/")) useMcp.getState().record({ tool: method, error: errorOf(reply) });
     await invoke("mcp_reply", { id: ev.payload.id, body: reply });
   });
 }

@@ -8,3 +8,4 @@ export * from "./export-tiled";
 export * from "./draw-ops";
 export * from "./autotile";
 export * from "./export-atlas";
+export * from "./sprite-prompt";

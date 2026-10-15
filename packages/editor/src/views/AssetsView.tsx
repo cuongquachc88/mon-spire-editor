@@ -106,17 +106,19 @@ function Sheets() {
     }
   };
 
-  const remove = async () => {
-    if (!sheet) return;
-    const refs = [
-      ...Object.values(tilesets).filter((t) => t.sheetId === sheet.id).map((t) => `tileset ${t.id}`),
-      ...Object.values(animations).filter((a) => a.sheetId === sheet.id).map((a) => `animation ${a.id}`),
-    ];
-    if (refs.length) return setError(`Cannot delete: used by ${refs.join(", ")}`);
-    if (!(await confirmAsk(`Remove sheet "${sheet.id}" from the project? The PNG file stays on disk.`))) return;
-    await store.remove("sheets", sheet.id);
-    setSel(undefined);
-    await reload();
+  const removeSheet = async (id: string) => {
+    try {
+      const { tilesets: ts, animations: an } = await store.sheetUsage(id);
+      if (ts.length) return setError(`Cannot delete: used by tileset ${ts.join(", ")}`);
+      const extra = an.length ? ` This also deletes animation${an.length > 1 ? "s" : ""} ${an.join(", ")}.` : "";
+      if (!(await confirmAsk(`Delete sheet "${id}" and its PNG?${extra}`))) return;
+      await store.removeSheet(id);
+      if (sel === id) setSel(undefined);
+      setError(undefined);
+      await reload();
+    } catch (e) {
+      setError(msg(e));
+    }
   };
 
   return (
@@ -125,7 +127,10 @@ function Sheets() {
         <h3>Sheets</h3>
         <ul className="list">
           {Object.keys(sheets).map((id) => (
-            <li key={id} className={id === sel ? "on" : ""} onClick={() => setSel(id)}>{id} <small>{sheets[id]!.frames.length} frames</small></li>
+            <li key={id} className={id === sel ? "on" : ""} onClick={() => setSel(id)}>
+              {id} <small>{sheets[id]!.frames.length} frames</small>
+              <button className="x" title={`Delete sheet "${id}"`} onClick={(e) => (e.stopPropagation(), removeSheet(id))}>✕</button>
+            </li>
           ))}
         </ul>
         <label className="filebtn">
@@ -145,7 +150,7 @@ function Sheets() {
             <button onClick={slice}>Slice</button>
             <button onClick={() => openPixel(sheet.id)}>Edit pixels</button>
             <button onClick={exportAtlasFiles}>Export atlas</button>
-            <button onClick={remove}>Remove</button>
+            <button onClick={() => removeSheet(sheet.id)}>Delete sheet</button>
             {notice && <p className="muted">{notice}</p>}
             <label>Zoom {zoom}× <input type="range" min={1} max={16} value={zoom} onChange={(e) => setZoom(+e.target.value)} /></label>
           </>
@@ -219,13 +224,17 @@ function Tilesets() {
         </ul>
         <details open={!Object.keys(tilesets).length}>
           <summary>New tileset from sheet</summary>
-          <input placeholder="id" value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} />
-          <input placeholder="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <select value={form.sheetId} onChange={(e) => setForm({ ...form, sheetId: e.target.value })}>
-            <option value="">Sheet…</option>
-            {Object.keys(sheets).map((id) => <option key={id} value={id}>{id}</option>)}
-          </select>
-          <button onClick={create}>Create</button>
+          <div className="form">
+            <input placeholder="id" value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} />
+            <input placeholder="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <div className="row">
+              <select value={form.sheetId} onChange={(e) => setForm({ ...form, sheetId: e.target.value })}>
+                <option value="">Sheet…</option>
+                {Object.keys(sheets).map((id) => <option key={id} value={id}>{id}</option>)}
+              </select>
+              <button onClick={create}>Create</button>
+            </div>
+          </div>
         </details>
         {error && <p className="error">{error}</p>}
         {ts && <button onClick={remove}>Delete tileset</button>}

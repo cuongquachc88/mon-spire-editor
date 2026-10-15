@@ -94,3 +94,50 @@ describe("History", () => {
     expect(h.canRedo).toBe(false);
   });
 });
+
+describe("deleting a sheet", () => {
+  async function setup() {
+    const fs = new MemoryFs();
+    const store = new ProjectStore(fs, "/p");
+    await store.init("demo");
+    await fs.writeBinary("/p/assets/a.png", new Uint8Array([1]));
+    await store.saveSheet({ id: "a", image: "assets/a.png", margin: 0, spacing: 0, frames: [] });
+    await store.saveAnimation({ id: "walk", name: "Walk", sheetId: "a", frames: [{ frameId: "x", durationMs: 100 }], loop: true, tags: [] });
+    return { fs, store };
+  }
+
+  it("reports what a deletion would touch", async () => {
+    const { store } = await setup();
+    await store.saveTileset({ id: "ts", name: "T", sheetId: "a", tiles: [] });
+    expect(await store.sheetUsage("a")).toEqual({ tilesets: ["ts"], animations: ["walk"] });
+  });
+
+  it("removes the sheet, its animations and its PNG, and unregisters them", async () => {
+    const { fs, store } = await setup();
+    expect(await store.removeSheet("a")).toEqual({ animations: ["walk"], imageDeleted: true });
+    const project = await store.loadProject();
+    expect([project.sheets, project.animations]).toEqual([[], []]);
+    expect(await fs.exists("/p/assets/a.png")).toBe(false);
+    expect(await fs.exists("/p/sheets/a.json")).toBe(false);
+  });
+
+  it("refuses while a tileset uses the sheet and changes nothing", async () => {
+    const { fs, store } = await setup();
+    await store.saveTileset({ id: "ts", name: "T", sheetId: "a", tiles: [] });
+    await expect(store.removeSheet("a")).rejects.toThrow("used by tileset ts");
+    expect((await store.loadProject()).sheets).toEqual(["a"]);
+    expect(await fs.exists("/p/assets/a.png")).toBe(true);
+    expect((await store.loadProject()).animations).toEqual(["walk"]);
+  });
+
+  it("keeps the PNG when asked to, or when another sheet shares the file", async () => {
+    const keep = await setup();
+    expect((await keep.store.removeSheet("a", { deleteImage: false })).imageDeleted).toBe(false);
+    expect(await keep.fs.exists("/p/assets/a.png")).toBe(true);
+
+    const shared = await setup();
+    await shared.store.saveSheet({ id: "b", image: "assets/a.png", margin: 0, spacing: 0, frames: [] });
+    expect((await shared.store.removeSheet("a")).imageDeleted).toBe(false);
+    expect(await shared.fs.exists("/p/assets/a.png")).toBe(true);
+  });
+});

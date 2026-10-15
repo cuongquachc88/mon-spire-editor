@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type Tab = "assets" | "pixel" | "map";
+export type Tab = "assets" | "pixel" | "map" | "create";
 
 interface UiState {
   tab: Tab;

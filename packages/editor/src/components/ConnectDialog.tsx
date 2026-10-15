@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { mcpPort } from "../lib/mcp-host";
 import { isTauri } from "../lib/tauri-fs";
+import { useMcp } from "../state/mcp";
 import { projectRoot } from "../state/project";
 import { useUi } from "../state/ui";
 import { Icon } from "./Icon";
@@ -29,6 +29,50 @@ function CopyBlock({ label, text }: { label: string; text: string }) {
   );
 }
 
+function since(t: number) {
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  return s < 5 ? "just now" : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+}
+
+function duration(ms: number) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ${s % 60} s`;
+  return `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
+}
+
+/** Live state of the built-in MCP server, with the controls to restart it. */
+function McpStatus() {
+  const m = useMcp();
+  useEffect(() => {
+    void m.refresh();
+    const t = setInterval(() => void useMcp.getState().refresh(), 1500);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <section className="panel" aria-label="MCP server status">
+      <header className="panel-head">
+        <h3 className="status-title">
+          <span className={`mcp-chip ${m.running ? "running" : "stopped"}`}><i /> {m.running ? "Running" : "Stopped"}</span>
+        </h3>
+        <div className="row">
+          <button disabled={m.busy} onClick={() => void m.restart()}><Icon name="refresh" size={15} /> {m.running ? "Restart" : "Start"}</button>
+          {m.running && <button disabled={m.busy} onClick={() => void m.stop()}><Icon name="power" size={15} /> Stop</button>}
+        </div>
+      </header>
+      <dl className="statgrid">
+        <dt>Address</dt><dd>{m.running ? `http://127.0.0.1:${m.port}/mcp` : "Not listening"}</dd>
+        <dt>Running for</dt><dd>{m.running && m.startedMs ? duration(Date.now() - m.startedMs) : "-"}</dd>
+        <dt>Requests handled</dt><dd>{m.handled}{m.errors ? ` (${m.errors} with errors)` : ""}</dd>
+        <dt>Last activity</dt><dd>{m.lastAt ? `${since(m.lastAt)}: ${m.lastTool}` : "None yet"}</dd>
+        {m.lastError && (<><dt>Last error</dt><dd className="error">{m.lastError}</dd></>)}
+      </dl>
+      {!m.running && <p className="muted">Claude cannot reach the editor while the server is stopped.</p>}
+    </section>
+  );
+}
+
 const PROMPTS = [
   "Draw a 32×32 treasure chest in warm browns, preview it, and fix anything that looks off.",
   "Make a 24×16 map called harbor with water along the south edge, a sand beach, and a path to the north.",
@@ -39,13 +83,11 @@ export function ConnectDialog() {
   const close = () => useUi.getState().setConnect(false);
   const closeBtn = useRef<HTMLButtonElement>(null);
   const desktop = isTauri();
-  const [port, setPort] = useState<number | null | undefined>(undefined);
+  const live = useMcp();
+  const port = live.running ? live.port : null;
   const dir = projectRoot();
   const known = dir && dir !== ".";
   const folder = known ? dir : "/path/to/your/project";
-  useEffect(() => {
-    if (desktop) mcpPort().then(setPort, () => setPort(null));
-  }, [desktop]);
   const url = port ? `http://127.0.0.1:${port}/mcp` : undefined;
 
   useEffect(() => {
@@ -69,7 +111,7 @@ export function ConnectDialog() {
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="connect-title">
         <header>
-          <h2 id="connect-title">Connect Claude to this project</h2>
+          <h2 id="connect-title">{desktop ? "Claude and MCP" : "Connect Claude to this project"}</h2>
           <button ref={closeBtn} className="ghost icon" onClick={close} aria-label="Close"><Icon name="close" /></button>
         </header>
         <div className="dialog-body">
@@ -77,11 +119,11 @@ export function ConnectDialog() {
             Claude talks to your project through an MCP server: a small program that lets it draw sprites, edit maps and read results
             as tools. Both of you work on the same folder, so changes show up here as they happen.
           </p>
+          {desktop && <McpStatus />}
           {desktop ? (
             <>
               <h3>Add the server</h3>
-              {port === undefined && <p className="muted">Checking the app's MCP address…</p>}
-              {port === null && <p className="error">The app could not open a local port for MCP. Close other copies of Mon Spire Editor and reopen it.</p>}
+              {!live.running && <p className="muted">The server is stopped. Start it above to get an address.</p>}
               {url && (
                 <>
                   <p>

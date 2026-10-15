@@ -11,7 +11,7 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(HERE, "out")
-SUITES = ["boot.py", "editor_basics.py", "mcp_and_assets.py", "features.py"]
+SUITES = ["boot.py", "editor_basics.py", "mcp_and_assets.py", "features.py", "create.py"]
 PREVIEW_SUITES = {"boot.py"}  # run against the production bundle (`vite preview`), not the dev server
 PORT = 5173  # vite.config.ts uses strictPort
 
@@ -64,6 +64,7 @@ if __name__ == "__main__":
     # the boot suite tests the real production bundle, so build it first
     if subprocess.run(["pnpm", "--filter", "@mse/editor", "build"], cwd=ROOT, stdout=subprocess.DEVNULL).returncode != 0:
         sys.exit("editor build failed")
-    results = {s: run_suite(s) for s in SUITES}
+    wanted = [a for a in sys.argv[1:] if a in SUITES] or SUITES   # e.g. `python3 e2e/run.py create.py`
+    results = {s: run_suite(s) for s in wanted}
     print("\n" + "\n".join(f"{'PASS' if ok else 'FAIL'}  {s}" for s, ok in results.items()))
     sys.exit(0 if all(results.values()) else 1)

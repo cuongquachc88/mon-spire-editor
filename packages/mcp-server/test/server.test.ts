@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { PNG } from "pngjs";
-import { MemoryFs, ProjectStore } from "@mse/core";
+import { MemoryFs, ProjectStore, SpriteSpecSchema, buildSpritePrompt } from "@mse/core";
 import { createServer } from "../src/server";
 
 let client: Client;
@@ -302,5 +302,80 @@ describe("market-inspired tools", () => {
     const px = (x: number, y: number) => [...out.data.subarray((y * out.width + x) * 4, (y * out.width + x) * 4 + 3)];
     expect(px(24, 24)).toEqual([255, 0, 255]); // sprite spans x 16..31, y 16..31 (bottom-centre at 24,32)
     expect(px(8, 8)).not.toEqual([255, 0, 255]);
+  });
+});
+
+describe("sprite requests and prompts", () => {
+  const spec = { subject: "a red slime", kind: "creature", width: 16, height: 16, frames: 1, style: "snes", sheetId: "slime" };
+  async function queue(id: string, over: object = {}) {
+    const now = new Date(Date.now() + queue.n++).toISOString();
+    const parsed = SpriteSpecSchema.parse({ ...spec, ...over });
+    await store.saveRequest({ id, createdAt: now, updatedAt: now, status: "pending", spec: parsed, prompt: buildSpritePrompt(parsed) });
+  }
+  queue.n = 0;
+
+  it("lists requests oldest first and claims the oldest pending one with its full prompt", async () => {
+    await queue("r1", { sheetId: "first" });
+    await queue("r2", { sheetId: "second" });
+    expect(JSON.parse((await call("request_list")).text).map((r: any) => r.id)).toEqual(["r1", "r2"]);
+    const claimed = JSON.parse((await call("request_claim")).text);
+    expect(claimed.id).toBe("r1");
+    expect(claimed.prompt).toContain('sprite_create id "first"');
+    expect((await store.loadRequest("r1")).status).toBe("in_progress");
+    expect(JSON.parse((await call("request_claim")).text).id).toBe("r2"); // r1 is taken, so the next one
+    expect((await call("request_claim")).text).toBe("No pending requests.");
+  });
+
+  it("complete needs the sheet to exist; then the request is done and linked to its result", async () => {
+    await queue("r1");
+    await call("request_claim");
+    const early = await call("request_complete", { id: "r1" });
+    expect(early.isError).toBe(true);
+    expect(early.text).toContain('Sheet "slime" does not exist yet');
+    await call("sprite_create", { id: "slime", width: 16, height: 16 });
+    expect((await call("request_complete", { id: "r1", note: "green blob" })).isError).toBe(false);
+    expect(await store.loadRequest("r1")).toMatchObject({ status: "done", resultSheetId: "slime", note: "green blob" });
+    expect((await call("request_claim", { id: "r1" })).isError).toBe(true); // finished work cannot be re-claimed
+  });
+
+  it("fail records a readable reason", async () => {
+    await queue("r1");
+    await call("request_fail", { id: "r1", reason: "The subject is too vague" });
+    expect(await store.loadRequest("r1")).toMatchObject({ status: "failed", note: "The subject is too vague" });
+    expect((await call("request_fail", { id: "nope", reason: "x" })).isError).toBe(true);
+  });
+
+  it("offers draw_sprite and do_pending_requests as MCP prompts", async () => {
+    const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
+    expect(prompts).toEqual(expect.arrayContaining(["draw_sprite", "do_pending_requests"]));
+    const got = await client.getPrompt({ name: "draw_sprite", arguments: { subject: "Cây táo", size: "24x32", frames: "3" } });
+    const text = (got.messages[0]!.content as { text: string }).text;
+    expect(text).toContain("24x32 pixels per frame, 3 frames");
+    expect(text).toContain('sprite_create id "cay-tao"');
+    const bad = await client.getPrompt({ name: "draw_sprite", arguments: { subject: "x", size: "9999" } });
+    expect((bad.messages[0]!.content as { text: string }).text).toContain("Could not build the brief");
+  });
+});
+
+describe("sheet_delete", () => {
+  it("deletes a sheet with its animations and PNG", async () => {
+    await call("sprite_create", { id: "tmp", width: 32, height: 16 });
+    await call("sprite_slice", { sheetId: "tmp", frameWidth: 16, frameHeight: 16 });
+    await call("animation_create", { id: "tmp-anim", name: "T", sheetId: "tmp", frameIds: ["tmp_0", "tmp_1"] });
+    const r = await call("sheet_delete", { id: "tmp" });
+    expect(r.text).toBe('Deleted sheet "tmp" and animation(s) tmp-anim and its PNG.');
+    expect(await memfs.exists("/p/assets/tmp.png")).toBe(false);
+    expect((await store.loadProject()).animations).toEqual([]);
+  });
+
+  it("is refused while a tileset uses the sheet, leaving everything in place", async () => {
+    const r = await call("sheet_delete", { id: "terrain" }); // the fixture's "ground" tileset uses it
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("used by tileset ground");
+    expect((await store.loadProject()).sheets).toContain("terrain");
+  });
+
+  it("reports an unknown sheet instead of crashing", async () => {
+    expect((await call("sheet_delete", { id: "ghost" })).isError).toBe(true);
   });
 });

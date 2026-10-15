@@ -5,6 +5,7 @@ import {
   type MapData,
   type PixelImage,
   type Project,
+  type SpriteRequest,
   type SpriteSheet,
   type Tileset,
   type FileSystemAdapter,
@@ -13,10 +14,32 @@ import { HttpFs, watchProject } from "../lib/http-fs";
 import { TauriFs, watchTauri } from "../lib/tauri-fs";
 import { decodePng } from "../lib/image";
 
-/** Remembers our own writes so the file watcher doesn't echo them back as external edits. */
-const recentWrites = new Map<string, number>();
-const SELF_WRITE_MS = 1500;
-export const isSelfWrite = (path: string) => (recentWrites.get(path) ?? 0) > Date.now() - SELF_WRITE_MS;
+/**
+ * Remembers what we last wrote to each file so the watcher can tell our own echo from a real outside edit.
+ * A time window alone is not enough: Claude may change the same file a moment after we saved it.
+ */
+const lastWrite = new Map<string, { at: number; sig: number; binary: boolean }>();
+const ECHO_WINDOW_MS = 5000;
+
+function fnv(data: string | Uint8Array): number {
+  let h = 0x811c9dc5;
+  if (typeof data === "string") for (let i = 0; i < data.length; i++) h = Math.imul(h ^ data.charCodeAt(i), 0x01000193);
+  else for (let i = 0; i < data.length; i++) h = Math.imul(h ^ data[i]!, 0x01000193);
+  return h >>> 0;
+}
+
+/** True when the file on disk is exactly what we wrote a moment ago (so there is nothing new to load). */
+export async function isOwnEcho(path: string): Promise<boolean> {
+  const w = lastWrite.get(path);
+  if (!w || Date.now() - w.at > ECHO_WINDOW_MS || !backend) return false;
+  try {
+    const abs = backend.root === "." ? path : `${backend.root}/${path}`;
+    const now = w.binary ? await backend.inner.readBinary(abs) : await backend.inner.readText(abs);
+    return fnv(now) === w.sig;
+  } catch {
+    return false; // deleted or unreadable: that is a real change
+  }
+}
 
 export interface Backend {
   inner: FileSystemAdapter;
@@ -43,8 +66,8 @@ class TrackingFs implements FileSystemAdapter {
     const p = slash(path);
     return this.root === "." || p.startsWith("/") || /^[a-z]:\//i.test(p) ? path : `${this.root}/${p}`;
   }
-  private mark(path: string) {
-    recentWrites.set(this.rel(path), Date.now());
+  private mark(path: string, data: string | Uint8Array) {
+    lastWrite.set(this.rel(path), { at: Date.now(), sig: fnv(data), binary: typeof data !== "string" });
   }
 
   readText = (p: string) => this.inner.readText(this.abs(p));
@@ -52,11 +75,11 @@ class TrackingFs implements FileSystemAdapter {
   exists = (p: string) => this.inner.exists(this.abs(p));
   remove = (p: string) => this.inner.remove(this.abs(p));
   async writeText(p: string, c: string) {
-    this.mark(p);
+    this.mark(p, c);
     await this.inner.writeText(this.abs(p), c);
   }
   async writeBinary(p: string, d: Uint8Array) {
-    this.mark(p);
+    this.mark(p, d);
     await this.inner.writeBinary(this.abs(p), d);
   }
 }
@@ -93,6 +116,7 @@ interface ProjectState {
   tilesets: Record<string, Tileset>;
   maps: Record<string, MapData>;
   animations: Record<string, Animation>;
+  requests: Record<string, SpriteRequest>;
   images: Record<string, PixelImage>;
   /** Bumped when files change on disk, so open documents know to reload. */
   externalRev: number;
@@ -124,6 +148,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   tilesets: {},
   maps: {},
   animations: {},
+  requests: {},
   images: {},
   externalRev: 0,
 
@@ -132,7 +157,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     const tracking = new TrackingFs(b.inner, b.root);
     fs = tracking;
     store = new ProjectStore(tracking, b.root);
-    set({ status: "loading", sheets: {}, tilesets: {}, maps: {}, animations: {}, images: {}, lastExternalPath: undefined });
+    set({ status: "loading", sheets: {}, tilesets: {}, maps: {}, animations: {}, requests: {}, images: {}, lastExternalPath: undefined });
     await get().load();
     await startWatching();
   },
@@ -141,11 +166,12 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (!backend) return;
     try {
       const project = await store.loadProject();
-      const [sheets, tilesets, maps, animations] = await Promise.all([
+      const [sheets, tilesets, maps, animations, requests] = await Promise.all([
         loadAll(project.sheets, (id) => store.loadSheet(id)),
         loadAll(project.tilesets, (id) => store.loadTileset(id)),
         loadAll(project.maps, (id) => store.loadMap(id)),
         loadAll(project.animations, (id) => store.loadAnimation(id)),
+        loadAll(project.requests, (id) => store.loadRequest(id)),
       ]);
       const images: Record<string, PixelImage> = {};
       await Promise.all(
@@ -157,7 +183,7 @@ export const useProject = create<ProjectState>((set, get) => ({
           }
         }),
       );
-      set({ status: "ready", error: undefined, project, sheets, tilesets, maps, animations, images });
+      set({ status: "ready", error: undefined, project, sheets, tilesets, maps, animations, requests, images });
     } catch (e) {
       set({ status: "error", error: e instanceof Error ? e.message : String(e) });
     }
@@ -178,8 +204,8 @@ let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 async function startWatching() {
   stop?.();
   const mine = backend;
-  const unsub = await mine!.watch((path) => {
-    if (backend !== mine || isSelfWrite(path)) return;
+  const unsub = await mine!.watch(async (path) => {
+    if (backend !== mine || (await isOwnEcho(path))) return;
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(async () => {
       await useProject.getState().load();

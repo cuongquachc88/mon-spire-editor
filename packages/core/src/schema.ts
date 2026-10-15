@@ -107,6 +107,37 @@ export const MapSchema = z
     });
   });
 
+export const SpriteSpecSchema = z.object({
+  subject: z.string().trim().min(1, "Describe what to draw"),
+  kind: z.enum(["character", "creature", "item", "prop", "tile", "tree", "ui"]).default("prop"),
+  width: z.number().int().min(4).max(256),
+  height: z.number().int().min(4).max(256),
+  frames: z.number().int().min(1).max(16).default(1),
+  motion: z.string().default(""),
+  style: z.enum(["nes", "gameboy", "snes", "modern"]).default("snes"),
+  colors: z.number().int().min(2).max(64).default(16),
+  palette: z.array(z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use #rrggbb")).default([]),
+  outline: z.enum(["none", "dark", "colored"]).default("dark"),
+  shading: z.enum(["flat", "cel", "dither"]).default("cel"),
+  view: z.enum(["side", "front", "three-quarter", "top-down"]).default("side"),
+  light: z.enum(["top-left", "top-right", "top"]).default("top-left"),
+  notes: z.string().default(""),
+  /** Sheet id Claude should create (letters, digits, - and _). */
+  sheetId: z.string().regex(/^[a-z0-9_-]+$/i, "Use letters, numbers, - and _"),
+});
+
+export const RequestSchema = z.object({
+  id: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  status: z.enum(["pending", "in_progress", "done", "failed"]).default("pending"),
+  spec: SpriteSpecSchema,
+  prompt: z.string(),
+  /** Set when Claude finishes: the sheet that holds the result. */
+  resultSheetId: z.string().optional(),
+  note: z.string().optional(),
+});
+
 export const ProjectSchema = z.object({
   version: z.literal(SCHEMA_VERSION).default(SCHEMA_VERSION),
   name: z.string(),
@@ -115,6 +146,7 @@ export const ProjectSchema = z.object({
   animations: z.array(z.string()).default([]),
   tilesets: z.array(z.string()).default([]),
   maps: z.array(z.string()).default([]),
+  requests: z.array(z.string()).default([]),
 });
 
 export type Rect = z.infer<typeof RectSchema>;
@@ -126,3 +158,5 @@ export type Entity = z.infer<typeof EntitySchema>;
 export type Layer = z.infer<typeof LayerSchema>;
 export type MapData = z.infer<typeof MapSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
+export type SpriteSpec = z.infer<typeof SpriteSpecSchema>;
+export type SpriteRequest = z.infer<typeof RequestSchema>;

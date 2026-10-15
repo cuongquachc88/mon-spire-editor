@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { confirmAsk } from "../lib/ask";
 import { forgetProject, pickAndOpen, openProjectDir, recentProjects } from "../lib/open-project";
-import { isTauri } from "../lib/tauri-fs";
+import { TauriFs, isTauri } from "../lib/tauri-fs";
 import { useProject } from "../state/project";
 import { useUi } from "../state/ui";
 import { HeroScene } from "./HeroScene";
@@ -15,6 +15,18 @@ export function Welcome({ message }: { message?: string }) {
   const [error, setError] = useState<string>();
   const desktop = isTauri();
   const open = status === "ready" && project;
+  const [, refreshRecent] = useState(0);
+
+  // Forget recent folders that were moved or deleted, so the list never offers a dead link.
+  useEffect(() => {
+    if (!desktop) return;
+    const fs = new TauriFs();
+    void Promise.all(recentProjects().map(async (d) => ((await fs.exists(`${d}/project.json`).catch(() => false)) ? undefined : d))).then((gone) => {
+      const dead = gone.filter((d): d is string => !!d);
+      dead.forEach(forgetProject);
+      if (dead.length) refreshRecent((n) => n + 1);
+    });
+  }, [desktop]);
 
   const run = async (fn: () => Promise<unknown>) => {
     try {

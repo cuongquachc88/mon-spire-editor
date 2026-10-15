@@ -6,12 +6,15 @@ import { initialProject, startMcpHost } from "./lib/mcp-host";
 import { openProjectDir, reopenLast } from "./lib/open-project";
 import { isTauri } from "./lib/tauri-fs";
 import { httpBackend, useProject } from "./state/project";
+import { useMcp } from "./state/mcp";
 import { useUi, type Tab } from "./state/ui";
 import { AssetsView } from "./views/AssetsView";
+import { CreateView } from "./views/CreateView";
 import { MapView } from "./views/MapView";
 import { PixelView } from "./views/PixelView";
 
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
+  { id: "create", label: "Create", icon: "sparkle" },
   { id: "assets", label: "Assets", icon: "assets" },
   { id: "pixel", label: "Pixel", icon: "pixel" },
   { id: "map", label: "Map", icon: "map" },
@@ -21,6 +24,7 @@ export function App() {
   const { status, error, project, lastExternalPath } = useProject();
   const { tab, setTab, welcome, setWelcome, connect, setConnect } = useUi();
   const desktop = isTauri();
+  const mcp = useMcp();
 
   useEffect(() => {
     if (!desktop) {
@@ -59,6 +63,15 @@ export function App() {
             </span>
           )}
           <span className="grow" />
+          {mcp.available && (
+            <button
+              className={`mcp-chip ${mcp.running ? "running" : "stopped"} ${mcp.lastAt && Date.now() - mcp.lastAt < 3000 ? "active" : ""}`}
+              onClick={() => setConnect(true)}
+              title="MCP server status"
+            >
+              <i /> MCP {mcp.running ? `:${mcp.port}` : "stopped"}
+            </button>
+          )}
           <button className="ghost" onClick={() => setConnect(true)}>
             <Icon name="plug" size={16} /> Connect Claude
           </button>
@@ -78,6 +91,7 @@ export function App() {
             ))}
           </nav>
           <div className="content">
+            {tab === "create" && <CreateView />}
             {tab === "assets" && <AssetsView />}
             {tab === "pixel" && <PixelView />}
             {tab === "map" && <MapView />}

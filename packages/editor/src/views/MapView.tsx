@@ -570,17 +570,21 @@ export function MapView() {
         </select>
         <details>
           <summary>New map</summary>
-          <input placeholder="id" value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} />
-          <input placeholder="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <div className="row">
-            <input type="number" value={form.w} onChange={(e) => setForm({ ...form, w: +e.target.value })} />×
-            <input type="number" value={form.h} onChange={(e) => setForm({ ...form, h: +e.target.value })} />
+          <div className="form">
+            <input placeholder="id" value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })} />
+            <input placeholder="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <div className="row">
+              <input type="number" value={form.w} onChange={(e) => setForm({ ...form, w: +e.target.value })} />×
+              <input type="number" value={form.h} onChange={(e) => setForm({ ...form, h: +e.target.value })} />
+            </div>
+            <div className="row">
+              <select value={form.tilesetId} onChange={(e) => setForm({ ...form, tilesetId: e.target.value })}>
+                <option value="">Tileset…</option>
+                {tsList.map((id) => <option key={id} value={id}>{id}</option>)}
+              </select>
+              <button onClick={createMap}>Create</button>
+            </div>
           </div>
-          <select value={form.tilesetId} onChange={(e) => setForm({ ...form, tilesetId: e.target.value })}>
-            <option value="">Tileset…</option>
-            {tsList.map((id) => <option key={id} value={id}>{id}</option>)}
-          </select>
-          <button onClick={createMap}>Create</button>
         </details>
 
         <h3>Tools</h3>
