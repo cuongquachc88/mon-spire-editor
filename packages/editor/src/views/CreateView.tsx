@@ -6,6 +6,7 @@ import { Icon } from "../components/Icon";
 import { confirmAsk } from "../lib/ask";
 import { generateSprite } from "../lib/generate";
 import { useGen } from "../state/gen";
+import { isTauri } from "../lib/tauri-fs";
 import { useMcp } from "../state/mcp";
 import { store, useProject } from "../state/project";
 import { useUi } from "../state/ui";
@@ -275,12 +276,12 @@ export function CreateView() {
           {error && <p className="error" role="alert">{error}</p>}
           {notice && <p className="muted" role="status">{notice}</p>}
           <p className="muted small-note">
-            {mcp.available
+            {isTauri()
               ? mcp.lastAt
                 ? `Claude last used a tool ${ago(mcp.lastAt)} (${mcp.lastTool}).`
                 : "No MCP client has called this app yet."
               : "Copy the prompt into Claude, or queue it and let Claude pick it up over MCP."}{" "}
-            <button className="link" onClick={() => setConnect(true)}>{mcp.available ? "MCP status and setup" : "How to connect Claude"}</button>
+            <button className="link" onClick={() => setConnect(true)}>{isTauri() ? "MCP status and setup" : "MCP setup"}</button>
           </p>
         </section>
 

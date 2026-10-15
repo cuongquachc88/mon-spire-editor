@@ -84,6 +84,20 @@ with sync_playwright() as pw:
     pg.click("button:has-text('Try again')"); time.sleep(0.8)
     check("Try again puts it back in the queue", read(f"requests/{nid}.json")["status"] == "pending")
 
+    # the MCP popup must fit a short window and scroll to its end
+    pg.set_viewport_size({"width": 1100, "height": 360})
+    pg.click("header >> text=MCP"); pg.wait_for_selector(".dialog")
+    box = pg.locator(".dialog").bounding_box()
+    check("the MCP popup fits inside a short window", box["y"] >= 0 and box["y"] + box["height"] <= 360, str(box))
+    sh = pg.evaluate("(() => { const b = document.querySelector('.dialog-body'); return [b.scrollHeight, b.clientHeight]; })()")
+    check("its body is taller than what is visible, so it scrolls", sh[0] > sh[1], str(sh))
+    pg.evaluate("document.querySelector('.dialog-body').scrollTop = 99999")
+    end = pg.evaluate("(() => { const p = [...document.querySelectorAll('.dialog-body p')].pop().getBoundingClientRect(); return [p.top, p.bottom, innerHeight]; })()")
+    check("scrolling reaches the last line", 0 <= end[0] and end[1] <= end[2], str(end))
+    check("the popup says MCP, not a product name", pg.inner_text(".dialog h2").strip() == "MCP")
+    pg.keyboard.press("Escape")
+    check("Escape closes it", pg.locator(".dialog").count() == 0)
+
     check("no console errors", not logs, "; ".join(logs[:3]))
     b.close()
 print("\nFAILED:" if errors else "\nALL PASSED", errors); sys.exit(1 if errors else 0)

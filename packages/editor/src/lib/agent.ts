@@ -120,17 +120,31 @@ interface ApiResponse {
   usage?: { input_tokens?: number; output_tokens?: number };
 }
 
+/** The configured address, unless the app was started with MSE_API_BASE_URL (desktop only; used by tests). */
+async function baseUrl(settings: AiSettings): Promise<string> {
+  if (isTauri()) {
+    try {
+      const o = await invoke<string | null>("api_base_override");
+      if (o) return o;
+    } catch {
+      /* no override */
+    }
+  }
+  return settings.baseUrl;
+}
+
 async function post(settings: AiSettings, key: string, body: unknown, signal?: AbortSignal): Promise<ApiResponse> {
   const headers: Record<string, string> = { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" };
   if (!isTauri()) headers["anthropic-dangerous-direct-browser-access"] = "true"; // required for direct browser calls
-  const url = `${settings.baseUrl.replace(/\/+$/, "")}/v1/messages`;
+  const base = await baseUrl(settings);
+  const url = `${base.replace(/\/+$/, "")}/v1/messages`;
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
       res = await http(url, { method: "POST", headers, body: JSON.stringify(body), signal });
     } catch (e) {
       if ((e as Error).name === "AbortError") throw e;
-      throw new ApiError(`Could not reach ${settings.baseUrl}: ${e instanceof Error ? e.message : e}`, 0);
+      throw new ApiError(`Could not reach ${base}: ${e instanceof Error ? e.message : e}`, 0);
     }
     if (res.ok) return (await res.json()) as ApiResponse;
     const retryable = [429, 500, 502, 503, 529].includes(res.status);

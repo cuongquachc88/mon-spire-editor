@@ -62,7 +62,7 @@ export function Welcome({ message }: { message?: string }) {
             </button>
           )}
           <button onClick={() => useUi.getState().setConnect(true)}>
-            <Icon name="plug" /> Connect Claude
+            <Icon name="plug" /> MCP
           </button>
         </div>
         {(message || error) && <p className="error" role="alert">{error ?? message}</p>}

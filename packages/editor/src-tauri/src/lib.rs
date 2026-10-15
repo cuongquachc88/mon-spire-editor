@@ -123,6 +123,12 @@ fn secret_delete(name: String) -> Result<(), String> {
     }
 }
 
+/// `MSE_API_BASE_URL` points the in-app agent at another server (tests use a local stand-in for the API).
+#[tauri::command]
+fn api_base_override() -> Option<String> {
+    std::env::var("MSE_API_BASE_URL").ok().filter(|v| !v.is_empty())
+}
+
 #[tauri::command]
 fn initial_project(state: State<InitialProject>) -> Option<String> {
     state.0.clone()
@@ -248,7 +254,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .manage(Mcp::default())
         .manage(InitialProject(initial.clone()))
-        .invoke_handler(tauri::generate_handler![mcp_port, mcp_status, mcp_stop, mcp_start, mcp_restart, mcp_reply, initial_project, secret_set, secret_get, secret_delete])
+        .invoke_handler(tauri::generate_handler![mcp_port, mcp_status, mcp_stop, mcp_start, mcp_restart, mcp_reply, initial_project, api_base_override, secret_set, secret_get, secret_delete])
         .setup(move |app| {
             if let Some(dir) = &initial {
                 // an explicitly passed folder is trusted like one picked in the dialog
@@ -264,6 +270,23 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The real macOS Keychain: create, read back, overwrite, delete, and refuse names outside our prefix.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn keychain_round_trip_and_name_checks() {
+        let name = format!("mse_test_{}", std::process::id());
+        assert_eq!(secret_get(name.clone()).unwrap(), None);
+        secret_set(name.clone(), "value-1".into()).unwrap();
+        assert_eq!(secret_get(name.clone()).unwrap().as_deref(), Some("value-1"));
+        secret_set(name.clone(), "value-2".into()).unwrap();
+        assert_eq!(secret_get(name.clone()).unwrap().as_deref(), Some("value-2"));
+        secret_delete(name.clone()).unwrap();
+        assert_eq!(secret_get(name.clone()).unwrap(), None);
+        secret_delete(name).unwrap(); // deleting what is not there is fine
+        assert!(secret_set("other_name".into(), "x".into()).is_err());
+        assert!(secret_get("mse_../evil".into()).is_err());
+    }
 
     /// Restart relies on two facts: `unblock` ends the accept loop, and the same port can then be bound again.
     #[test]

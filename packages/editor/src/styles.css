@@ -169,10 +169,11 @@ fieldset.mask:disabled { opacity: .5; }
 
 /* ---- dialog ---- */
 .scrim { position: fixed; inset: 0; background: rgba(8,7,22,.72); display: grid; place-items: center; padding: 20px; z-index: 10; }
-.dialog { width: min(680px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--ink-800); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 40px 100px -20px rgba(0,0,0,.7); }
-.dialog > header { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 12px; }
+/* max-height must be the viewport (a % of the auto-height grid cell never constrains it), or the body never overflows and cannot scroll */
+.dialog { width: min(680px, 100%); max-height: calc(100vh - 40px); display: flex; flex-direction: column; background: var(--ink-800); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 40px 100px -20px rgba(0,0,0,.7); }
+.dialog > header { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 12px; }
 .dialog h2 { font-family: var(--font-display); font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
-.dialog-body { overflow: auto; padding: 0 18px 20px; display: flex; flex-direction: column; gap: 12px; line-height: 1.55; }
+.dialog-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 18px 20px; display: flex; flex-direction: column; gap: 12px; line-height: 1.55; }
 .dialog-body h3 { font-size: 13px; margin-top: 8px; }
 .codeblock { border: 1px solid var(--line); border-radius: var(--r-control); overflow: hidden; background: var(--ink-950); }
 .codehead { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px 4px 12px; background: var(--ink-700); color: var(--muted); font-size: 12px; }

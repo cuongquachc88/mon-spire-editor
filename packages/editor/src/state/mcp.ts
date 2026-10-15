@@ -9,8 +9,6 @@ interface RustStatus {
 }
 
 interface McpState {
-  /** False in the browser: there is no built-in server there, so the UI hides MCP status. */
-  available: boolean;
   running: boolean;
   port: number | null;
   startedMs: number | null;
@@ -40,7 +38,6 @@ export const useMcp = create<McpState>((set, get) => {
     }
   };
   return {
-    available: isTauri(),
     running: false,
     port: null,
     startedMs: null,
@@ -51,7 +48,7 @@ export const useMcp = create<McpState>((set, get) => {
     lastError: null,
     busy: false,
     async refresh() {
-      if (!get().available) return;
+      if (!isTauri()) return; // the browser has no built-in server; decided at call time, not when this module loads
       try {
         apply(await invoke<RustStatus>("mcp_status"));
       } catch {

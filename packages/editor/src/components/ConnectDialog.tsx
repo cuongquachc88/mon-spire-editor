@@ -68,7 +68,7 @@ function McpStatus() {
         <dt>Last activity</dt><dd>{m.lastAt ? `${since(m.lastAt)}: ${m.lastTool}` : "None yet"}</dd>
         {m.lastError && (<><dt>Last error</dt><dd className="error">{m.lastError}</dd></>)}
       </dl>
-      {!m.running && <p className="muted">Claude cannot reach the editor while the server is stopped.</p>}
+      {!m.running && <p className="muted">No MCP client can reach the editor while the server is stopped.</p>}
     </section>
   );
 }
@@ -111,13 +111,12 @@ export function ConnectDialog() {
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="connect-title">
         <header>
-          <h2 id="connect-title">{desktop ? "Claude and MCP" : "Connect Claude to this project"}</h2>
+          <h2 id="connect-title">MCP</h2>
           <button ref={closeBtn} className="ghost icon" onClick={close} aria-label="Close"><Icon name="close" /></button>
         </header>
         <div className="dialog-body">
           <p>
-            Claude talks to your project through an MCP server: a small program that lets it draw sprites, edit maps and read results
-            as tools. Both of you work on the same folder, so changes show up here as they happen.
+            An MCP server lets an AI client (Claude Code, Claude Desktop and others) draw sprites, edit maps and read results as tools. You and the client work on the same folder, so changes show up here as they happen.
           </p>
           {desktop && <McpStatus />}
           {desktop ? (

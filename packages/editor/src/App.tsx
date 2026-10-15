@@ -63,18 +63,22 @@ export function App() {
             </span>
           )}
           <span className="grow" />
-          {mcp.available && (
+          {desktop && (
             <button
               className={`mcp-chip ${mcp.running ? "running" : "stopped"} ${mcp.lastAt && Date.now() - mcp.lastAt < 3000 ? "active" : ""}`}
               onClick={() => setConnect(true)}
               title="MCP server status"
+              aria-label={mcp.running ? `MCP server running on port ${mcp.port}. Open status` : "MCP server stopped. Open status"}
             >
               <i /> MCP {mcp.running ? `:${mcp.port}` : "stopped"}
             </button>
           )}
-          <button className="ghost" onClick={() => setConnect(true)}>
-            <Icon name="plug" size={16} /> Connect Claude
-          </button>
+          {/* On desktop the MCP chip opens the same dialog; the browser has no chip, so it keeps this button. */}
+          {!desktop && (
+            <button className="ghost" onClick={() => setConnect(true)}>
+              <Icon name="plug" size={16} /> MCP
+            </button>
+          )}
           {desktop && (
             <button className="ghost" onClick={() => setWelcome(true)}>
               <Icon name="folder" size={16} /> Projects
