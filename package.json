@@ -10,7 +10,9 @@
     "desktop": "pnpm --filter @mse/editor desktop:dev",
     "desktop:build": "pnpm --filter @mse/editor desktop:build",
     "mcp": "tsx packages/mcp-server/src/index.ts",
-    "e2e": "python3 e2e/run.py"
+    "e2e": "python3 e2e/run.py",
+    "docs:tools": "pnpm --filter @mse/mcp-server docs:tools",
+    "docs:check": "pnpm --filter @mse/mcp-server docs:check"
   },
   "devDependencies": {
     "tsx": "^4.23.15",

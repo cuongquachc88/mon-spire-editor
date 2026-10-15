@@ -8,7 +8,9 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "docs:tools": "tsx scripts/gen-docs.ts",
+    "docs:check": "tsx scripts/gen-docs.ts --check"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
