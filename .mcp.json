@@ -2,7 +2,13 @@
   "mcpServers": {
     "spire-editor": {
       "command": "pnpm",
-      "args": ["--silent", "--filter", "@mse/mcp-server", "start", "projects/demo"]
+      "args": [
+        "--silent",
+        "exec",
+        "tsx",
+        "packages/mcp-server/src/index.ts",
+        "projects/demo"
+      ]
     }
   }
 }
