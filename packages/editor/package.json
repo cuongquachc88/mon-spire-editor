@@ -16,10 +16,13 @@
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@fontsource/pixelify-sans": "^5.3.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@mse/core": "workspace:*",
+    "@mse/mcp-server": "workspace:*",
     "@tauri-apps/api": "^2.12.3",
     "@tauri-apps/plugin-dialog": "^2.8.2",
     "@tauri-apps/plugin-fs": "^2.7.0",
+    "buffer": "^6.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^5.0.0"

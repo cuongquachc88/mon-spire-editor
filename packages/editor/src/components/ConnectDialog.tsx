@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { mcpPort } from "../lib/mcp-host";
+import { isTauri } from "../lib/tauri-fs";
 import { projectRoot } from "../state/project";
 import { useUi } from "../state/ui";
 import { Icon } from "./Icon";
@@ -36,9 +38,15 @@ const PROMPTS = [
 export function ConnectDialog() {
   const close = () => useUi.getState().setConnect(false);
   const closeBtn = useRef<HTMLButtonElement>(null);
+  const desktop = isTauri();
+  const [port, setPort] = useState<number | null | undefined>(undefined);
   const dir = projectRoot();
   const known = dir && dir !== ".";
   const folder = known ? dir : "/path/to/your/project";
+  useEffect(() => {
+    if (desktop) mcpPort().then(setPort, () => setPort(null));
+  }, [desktop]);
+  const url = port ? `http://127.0.0.1:${port}/mcp` : undefined;
 
   useEffect(() => {
     closeBtn.current?.focus();
@@ -52,6 +60,9 @@ export function ConnectDialog() {
     null,
     2,
   );
+  const httpCli = `claude mcp add --transport http spire-editor ${url ?? ""}`;
+  const httpJson = JSON.stringify({ mcpServers: { "spire-editor": { type: "http", url } } }, null, 2);
+  const bridge = `npx -y mcp-remote ${url ?? ""}`;
   const cli = `claude mcp add spire-editor -- npx tsx /path/to/mon-spire-editor/packages/mcp-server/src/index.ts ${folder}`;
 
   return (
@@ -66,10 +77,37 @@ export function ConnectDialog() {
             Claude talks to your project through an MCP server: a small program that lets it draw sprites, edit maps and read results
             as tools. Both of you work on the same folder, so changes show up here as they happen.
           </p>
-          <h3>Add the server</h3>
-          <CopyBlock label="Claude Code" text={cli} />
-          <CopyBlock label="Or in .mcp.json / Claude Desktop config" text={config} />
-          {!known && <p className="muted">Replace <code>/path/to/your/project</code> with the folder that holds <code>project.json</code>.</p>}
+          {desktop ? (
+            <>
+              <h3>Add the server</h3>
+              {port === undefined && <p className="muted">Checking the app's MCP address…</p>}
+              {port === null && <p className="error">The app could not open a local port for MCP. Close other copies of Mon Spire Editor and reopen it.</p>}
+              {url && (
+                <>
+                  <p>
+                    The server is built into this app and listens on <code>{url}</code> while the app is open. It always works on
+                    the project you have open{known ? <> (<code>{dir}</code>)</> : ""}. Nothing to install.
+                  </p>
+                  <CopyBlock label="Claude Code" text={httpCli} />
+                  <CopyBlock label="Or in .mcp.json" text={httpJson} />
+                  <details className="more">
+                    <summary>Claude Desktop</summary>
+                    <p className="muted">Claude Desktop starts local servers as programs, so use a small bridge to reach this address:</p>
+                    <CopyBlock label="Command (use in the app's MCP config)" text={bridge} />
+                  </details>
+                  <p className="muted">Only programs on this computer can connect, and web pages are refused.</p>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <h3>Add the server</h3>
+              <p className="muted">Browser mode has no built-in server. Run the stdio server from the repository instead:</p>
+              <CopyBlock label="Claude Code" text={cli} />
+              <CopyBlock label="Or in .mcp.json / Claude Desktop config" text={config} />
+              {!known && <p className="muted">Replace <code>/path/to/your/project</code> with the folder that holds <code>project.json</code>.</p>}
+            </>
+          )}
           <h3>Try asking</h3>
           <ul className="prompts">
             {PROMPTS.map((p) => <li key={p}>{p}</li>)}

@@ -169,6 +169,8 @@ fieldset.mask:disabled { opacity: .5; }
 .codehead { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px 4px 12px; background: var(--ink-700); color: var(--muted); font-size: 12px; }
 .codeblock pre { margin: 0; padding: 12px; overflow: auto; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .codeblock code { background: none; padding: 0; }
+details.more { border: none; padding: 0; }
+details.more > summary { color: var(--blue); }
 .prompts { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 
 /* ---- small screens and motion ---- */

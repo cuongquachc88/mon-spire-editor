@@ -11,7 +11,8 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(HERE, "out")
-SUITES = ["editor_basics.py", "mcp_and_assets.py", "features.py"]
+SUITES = ["boot.py", "editor_basics.py", "mcp_and_assets.py", "features.py"]
+PREVIEW_SUITES = {"boot.py"}  # run against the production bundle (`vite preview`), not the dev server
 PORT = 5173  # vite.config.ts uses strictPort
 
 def seed(proj):
@@ -46,7 +47,8 @@ def run_suite(name):
     tmp = tempfile.mkdtemp(prefix="mse-e2e-")
     proj = f"{tmp}/proj"; seed(proj)
     env = {**os.environ, "MSE_PROJECT": proj, "MSE_E2E_PROJ": proj, "MSE_E2E_OUT": OUT}
-    vite = subprocess.Popen(["pnpm", "exec", "vite", "--host", "127.0.0.1"], cwd=f"{ROOT}/packages/editor", env=env,
+    cmd = ["pnpm", "exec", "vite", "preview" if name in PREVIEW_SUITES else "--host", *(["--host", "127.0.0.1", "--port", str(PORT), "--strictPort"] if name in PREVIEW_SUITES else ["127.0.0.1"])]
+    vite = subprocess.Popen(cmd, cwd=f"{ROOT}/packages/editor", env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     try:
         if not wait_up(): print(f"[{name}] dev server did not start"); return False
@@ -59,6 +61,9 @@ def run_suite(name):
 if __name__ == "__main__":
     if not port_free(): sys.exit(f"Port {PORT} is already in use; stop the running dev server first.")
     shutil.rmtree(OUT, ignore_errors=True); os.makedirs(OUT)
+    # the boot suite tests the real production bundle, so build it first
+    if subprocess.run(["pnpm", "--filter", "@mse/editor", "build"], cwd=ROOT, stdout=subprocess.DEVNULL).returncode != 0:
+        sys.exit("editor build failed")
     results = {s: run_suite(s) for s in SUITES}
     print("\n" + "\n".join(f"{'PASS' if ok else 'FAIL'}  {s}" for s, ok in results.items()))
     sys.exit(0 if all(results.values()) else 1)

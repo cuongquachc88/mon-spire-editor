@@ -35,13 +35,28 @@ const lastProject = () => {
   }
 };
 
-/** Open a folder that already holds project.json. Throws if it doesn't. */
-export async function openProjectDir(dir: string) {
+/** Drop a folder that can no longer be opened from "recent" and from the reopen-last memory. */
+export function forgetProject(dir: string) {
+  try {
+    localStorage.setItem(RECENT, JSON.stringify(recentProjects().filter((d) => d !== dir)));
+    if (localStorage.getItem(LAST) === dir) localStorage.removeItem(LAST);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/**
+ * Open a folder that already holds project.json. Throws if it doesn't.
+ * `remember: false` is for folders passed on the command line, which should not replace the user's own history.
+ */
+export async function openProjectDir(dir: string, { remember: keep = true } = {}) {
   const fs = new TauriFs();
   if (!(await fs.exists(`${dir}/project.json`))) throw new Error(`No project.json in ${dir}`);
   await useProject.getState().open(tauriBackend(dir));
-  remember(dir);
-  addRecent(dir);
+  if (keep) {
+    remember(dir);
+    addRecent(dir);
+  }
 }
 
 /** Reopen the last project if it still exists. Returns false when there is nothing to reopen. */
@@ -52,6 +67,7 @@ export async function reopenLast() {
     await openProjectDir(dir);
     return true;
   } catch {
+    forgetProject(dir); // moved or deleted: don't keep offering it
     return false;
   }
 }

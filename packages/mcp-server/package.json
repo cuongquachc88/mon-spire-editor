@@ -2,7 +2,9 @@
   "name": "@mse/mcp-server",
   "version": "0.0.1",
   "type": "module",
-  "bin": { "mse-mcp": "src/index.ts" },
+  "bin": {
+    "mse-mcp": "src/index.ts"
+  },
   "scripts": {
     "start": "tsx src/index.ts",
     "test": "vitest run",
@@ -18,5 +20,8 @@
     "@types/node": "^22.0.0",
     "@types/pngjs": "^6.0.5",
     "tsx": "^4.19.0"
+  },
+  "exports": {
+    "./server": "./src/server.ts"
   }
 }

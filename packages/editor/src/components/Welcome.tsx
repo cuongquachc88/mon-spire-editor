@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { confirmAsk } from "../lib/ask";
-import { pickAndOpen, openProjectDir, recentProjects } from "../lib/open-project";
+import { forgetProject, pickAndOpen, openProjectDir, recentProjects } from "../lib/open-project";
 import { isTauri } from "../lib/tauri-fs";
 import { useProject } from "../state/project";
 import { useUi } from "../state/ui";
@@ -61,7 +61,7 @@ export function Welcome({ message }: { message?: string }) {
             <ul>
               {recentProjects().map((d) => (
                 <li key={d}>
-                  <button className="link" onClick={() => run(() => openProjectDir(d))} title={d}>
+                  <button className="link" onClick={() => run(() => openProjectDir(d).catch((e) => (forgetProject(d), Promise.reject(e))))} title={d}>
                     <b>{tail(d)}</b>
                     <span>{d}</span>
                   </button>

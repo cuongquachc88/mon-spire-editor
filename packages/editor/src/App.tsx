@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { ConnectDialog } from "./components/ConnectDialog";
 import { Icon, Mark, type IconName } from "./components/Icon";
 import { Welcome } from "./components/Welcome";
-import { reopenLast } from "./lib/open-project";
+import { initialProject, startMcpHost } from "./lib/mcp-host";
+import { openProjectDir, reopenLast } from "./lib/open-project";
 import { isTauri } from "./lib/tauri-fs";
 import { httpBackend, useProject } from "./state/project";
 import { useUi, type Tab } from "./state/ui";
@@ -22,8 +23,13 @@ export function App() {
   const desktop = isTauri();
 
   useEffect(() => {
-    if (!desktop) void useProject.getState().open(httpBackend());
-    else void reopenLast();
+    if (!desktop) {
+      void useProject.getState().open(httpBackend());
+      return;
+    }
+    void startMcpHost();
+    // `--project <dir>` (scripts, tests) wins over the remembered project
+    void initialProject().then((dir) => (dir ? openProjectDir(dir, { remember: false }).catch(() => reopenLast()) : reopenLast()));
   }, [desktop]);
 
   let body;
