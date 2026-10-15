@@ -75,3 +75,15 @@ Schemas live in `packages/core/src/schema.ts` and are validated on every read an
 - Editor and MCP writing the same file at the same moment is last-writer-wins at whole-file level.
 - Re-slicing a sheet replaces frame ids; run `project_validate` afterwards.
 - Deleting a sheet/tileset/animation leaves its PNG on disk by design.
+
+## Commits
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>[(scope)]: <subject>`,
+for example `feat(create): add sprite presets` or `fix(ui): make the MCP popup scroll`. Types: `feat`, `fix`, `docs`,
+`style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`. Keep the first line to 72 characters.
+
+A `commit-msg` hook in `.githooks/` rejects anything else. Turn it on once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```

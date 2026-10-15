@@ -1,0 +1,24 @@
+#!/bin/sh
+# Conventional Commits: <type>[(scope)][!]: <subject>
+#   types: feat fix docs style refactor perf test build ci chore revert
+# Enable once per clone:  git config core.hooksPath .githooks
+first=$(sed -n '1p' "$1")
+
+# merges, reverts made by git, and fixup/squash commits are exempt
+case "$first" in
+  "Merge "*|"Revert \""*|"fixup! "*|"squash! "*) exit 0 ;;
+esac
+
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: [^ ].*$'
+if ! printf '%s\n' "$first" | grep -Eq "$pattern"; then
+  echo "commit-msg: the first line must follow Conventional Commits:" >&2
+  echo "    <type>[(scope)]: <subject>      e.g.  feat(create): add sprite presets" >&2
+  echo "  types: feat fix docs style refactor perf test build ci chore revert" >&2
+  echo "  got:   $first" >&2
+  exit 1
+fi
+
+if [ "$(printf '%s' "$first" | wc -c)" -gt 72 ]; then
+  echo "commit-msg: keep the first line to 72 characters (it is $(printf '%s' "$first" | wc -c))." >&2
+  exit 1
+fi
