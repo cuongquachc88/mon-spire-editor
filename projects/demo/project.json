@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "demo",
+  "tileSize": 16,
+  "sheets": [
+    "terrain",
+    "tree",
+    "tree_sway"
+  ],
+  "animations": [
+    "tree_sway"
+  ],
+  "tilesets": [
+    "ground",
+    "trees"
+  ],
+  "maps": [
+    "town"
+  ]
+}

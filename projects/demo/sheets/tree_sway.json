@@ -1,0 +1,66 @@
+{
+  "id": "tree_sway",
+  "image": "assets/tree_sway.png",
+  "frameWidth": 56,
+  "frameHeight": 64,
+  "margin": 0,
+  "spacing": 0,
+  "frames": [
+    {
+      "id": "tree_sway_0",
+      "name": "tree_sway_0",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 56,
+        "h": 64
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "id": "tree_sway_1",
+      "name": "tree_sway_1",
+      "rect": {
+        "x": 56,
+        "y": 0,
+        "w": 56,
+        "h": 64
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "id": "tree_sway_2",
+      "name": "tree_sway_2",
+      "rect": {
+        "x": 112,
+        "y": 0,
+        "w": 56,
+        "h": 64
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "id": "tree_sway_3",
+      "name": "tree_sway_3",
+      "rect": {
+        "x": 168,
+        "y": 0,
+        "w": 56,
+        "h": 64
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  ]
+}

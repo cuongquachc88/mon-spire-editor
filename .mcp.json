@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "spire-editor": {
+      "command": "pnpm",
+      "args": ["--silent", "--filter", "@mse/mcp-server", "start", "projects/demo"]
+    }
+  }
+}

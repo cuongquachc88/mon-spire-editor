@@ -1,0 +1,66 @@
+{
+  "id": "terrain",
+  "image": "assets/terrain.png",
+  "frameWidth": 16,
+  "frameHeight": 16,
+  "margin": 0,
+  "spacing": 0,
+  "frames": [
+    {
+      "id": "terrain_0",
+      "name": "terrain_0",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "id": "terrain_1",
+      "name": "terrain_1",
+      "rect": {
+        "x": 16,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "id": "terrain_2",
+      "name": "terrain_2",
+      "rect": {
+        "x": 32,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    },
+    {
+      "id": "terrain_3",
+      "name": "terrain_3",
+      "rect": {
+        "x": 48,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      },
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  ]
+}

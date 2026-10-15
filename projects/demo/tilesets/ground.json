@@ -1,0 +1,27 @@
+{
+  "id": "ground",
+  "name": "Ground",
+  "sheetId": "terrain",
+  "tiles": [
+    {
+      "frameId": "terrain_0",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "terrain_1",
+      "collision": true,
+      "tags": []
+    },
+    {
+      "frameId": "terrain_2",
+      "collision": true,
+      "tags": []
+    },
+    {
+      "frameId": "terrain_3",
+      "collision": false,
+      "tags": []
+    }
+  ]
+}

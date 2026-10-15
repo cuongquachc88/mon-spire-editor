@@ -1,0 +1,25 @@
+{
+  "id": "tree_sway",
+  "name": "Tree sway",
+  "sheetId": "tree_sway",
+  "frames": [
+    {
+      "frameId": "tree_sway_0",
+      "durationMs": 167
+    },
+    {
+      "frameId": "tree_sway_1",
+      "durationMs": 167
+    },
+    {
+      "frameId": "tree_sway_2",
+      "durationMs": 167
+    },
+    {
+      "frameId": "tree_sway_3",
+      "durationMs": 167
+    }
+  ],
+  "loop": true,
+  "tags": []
+}

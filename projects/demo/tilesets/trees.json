@@ -1,0 +1,67 @@
+{
+  "id": "trees",
+  "name": "Trees",
+  "sheetId": "tree",
+  "tiles": [
+    {
+      "frameId": "tree_0",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "tree_1",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "tree_2",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "tree_3",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "tree_4",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "tree_5",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "tree_6",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "tree_7",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "tree_8",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "tree_9",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "tree_10",
+      "collision": false,
+      "tags": []
+    },
+    {
+      "frameId": "tree_11",
+      "collision": false,
+      "tags": []
+    }
+  ]
+}

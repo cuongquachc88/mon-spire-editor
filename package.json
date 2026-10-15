@@ -1,0 +1,19 @@
+{
+  "name": "mon-spire-editor",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "dev": "pnpm --filter @mse/editor dev",
+    "desktop": "pnpm --filter @mse/editor desktop:dev",
+    "desktop:build": "pnpm --filter @mse/editor desktop:build",
+    "mcp": "pnpm --filter @mse/mcp-server start",
+    "e2e": "python3 e2e/run.py"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
