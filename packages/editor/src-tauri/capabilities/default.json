@@ -16,6 +16,14 @@
     "fs:allow-mkdir",
     "fs:allow-remove",
     "fs:allow-watch",
-    "fs:allow-unwatch"
+    "fs:allow-unwatch",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://api.anthropic.com/*" },
+        { "url": "http://127.0.0.1:*/*" },
+        { "url": "http://localhost:*/*" }
+      ]
+    }
   ]
 }

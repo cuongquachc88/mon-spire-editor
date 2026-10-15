@@ -11,12 +11,25 @@ import { ProjectStore } from "@mse/core";
 import { createServer } from "@mse/mcp-server/server";
 import { useMcp } from "../state/mcp";
 import { projectRoot } from "../state/project";
-import { TauriFs } from "./tauri-fs";
+import { HttpFs } from "./http-fs";
+import { TauriFs, isTauri } from "./tauri-fs";
 
 // pngjs and the tool code use Node's Buffer.
 (globalThis as { Buffer?: unknown }).Buffer ??= Buffer;
 
-const rawFs = new TauriFs();
+const tauriFs = new TauriFs();
+const httpFs = new HttpFs();
+
+/**
+ * Where tool calls read and write. Desktop: the open project folder, through plain native file access.
+ * Browser dev mode: the dev server's project. Both bypass the editor's own tracking file adapter on purpose,
+ * so the watcher reloads these edits like any outside change. Undefined means no project is open.
+ */
+function currentIo() {
+  if (!isTauri()) return { store: new ProjectStore(httpFs, "."), fs: httpFs };
+  const root = projectRoot();
+  return root && root !== "." ? { store: new ProjectStore(tauriFs, root), fs: tauriFs } : undefined;
+}
 
 type Rpc = JSONRPCMessage & { id?: string | number; method?: string };
 const NO_PROJECT = "No project is open in Mon Spire Editor. Open a project folder in the app, then try again.";
@@ -38,13 +51,12 @@ class CaptureTransport implements Transport {
 
 async function handleOne(msg: Rpc): Promise<JSONRPCMessage | undefined> {
   const isRequest = typeof msg.method === "string" && msg.id !== undefined;
-  const root = projectRoot();
-  const hasProject = !!root && root !== ".";
-  if (isRequest && msg.method === "tools/call" && !hasProject) {
+  const io = currentIo();
+  if (isRequest && msg.method === "tools/call" && !io) {
     return { jsonrpc: "2.0", id: msg.id!, error: { code: -32000, message: NO_PROJECT } };
   }
   // initialize / tools/list work without a project; tool calls are refused above.
-  const server = createServer(new ProjectStore(rawFs, hasProject ? root : ""), rawFs);
+  const server = createServer(io?.store ?? new ProjectStore(tauriFs, ""), io?.fs ?? tauriFs);
   let answer: JSONRPCMessage | undefined;
   let done!: () => void;
   const replied = new Promise<void>((r) => (done = r));
@@ -128,3 +140,25 @@ export async function startMcpHost() {
 
 export const mcpPort = () => invoke<number | null>("mcp_port");
 export const initialProject = () => invoke<string | null>("initial_project");
+
+export interface ToolInfo {
+  name: string;
+  description?: string;
+  inputSchema: Record<string, unknown>;
+}
+export interface ToolResult {
+  isError?: boolean;
+  content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
+}
+
+const rpc = async (method: string, params?: unknown) => JSON.parse(await handleMcpBody(JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })));
+
+/** The same tool set an external MCP client sees, for the in-app agent. */
+export async function listTools(): Promise<ToolInfo[]> {
+  return (await rpc("tools/list")).result.tools;
+}
+
+export async function callTool(name: string, args: unknown): Promise<ToolResult> {
+  const r = await rpc("tools/call", { name, arguments: args });
+  return r.error ? { isError: true, content: [{ type: "text", text: String(r.error.message) }] } : r.result;
+}

@@ -76,6 +76,6 @@ export function buildSpritePrompt(spec: SpriteSpec): string {
 
 /** A sensible default sheet id from free text: "Red slime!" -> "red-slime". */
 export function slugify(text: string, fallback = "sprite"): string {
-  const s = text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+  const s = text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, 32).replace(/-+$/, ""); // trim after cutting, or a cut inside a word break leaves a dangling "-"
   return s || fallback;
 }

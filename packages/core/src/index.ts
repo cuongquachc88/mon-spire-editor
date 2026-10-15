@@ -9,3 +9,4 @@ export * from "./draw-ops";
 export * from "./autotile";
 export * from "./export-atlas";
 export * from "./sprite-prompt";
+export * from "./presets";

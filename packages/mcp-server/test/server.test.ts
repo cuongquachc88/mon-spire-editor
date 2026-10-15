@@ -352,6 +352,19 @@ describe("sprite requests and prompts", () => {
     const text = (got.messages[0]!.content as { text: string }).text;
     expect(text).toContain("24x32 pixels per frame, 3 frames");
     expect(text).toContain('sprite_create id "cay-tao"');
+    // presets and style packs
+    const walk = await client.getPrompt({ name: "draw_sprite", arguments: { preset: "hero-walk", style_pack: "pico8" } });
+    const wt = (walk.messages[0]!.content as { text: string }).text;
+    expect(wt).toContain("6 frames side by side (192x32 sheet)");
+    expect(wt).toContain("walk cycle");
+    expect(wt).toContain("exactly this palette (add nothing else): #000000");
+    expect(wt).toContain('sprite_create id "hero-walk"');
+    const over = await client.getPrompt({ name: "draw_sprite", arguments: { preset: "slime", subject: "a blue slime", frames: "2" } });
+    expect((over.messages[0]!.content as { text: string }).text).toContain("a blue slime");
+    for (const args of [{ preset: "nope" }, { subject: "x", style_pack: "nope" }, {}] as Record<string, string>[]) {
+      const r = await client.getPrompt({ name: "draw_sprite", arguments: args });
+      expect((r.messages[0]!.content as { text: string }).text).toMatch(/Unknown|Tell me what to draw/);
+    }
     const bad = await client.getPrompt({ name: "draw_sprite", arguments: { subject: "x", size: "9999" } });
     expect((bad.messages[0]!.content as { text: string }).text).toContain("Could not build the brief");
   });

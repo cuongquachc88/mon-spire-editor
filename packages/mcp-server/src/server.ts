@@ -6,6 +6,8 @@ import {
   MapSchema,
   exportTiled,
   buildSpritePrompt,
+  findStylePack,
+  findSubjectPreset,
   slugify,
   SpriteSpecSchema,
   type SpriteRequest,
@@ -797,27 +799,38 @@ export function createServer(store: ProjectStore, fs: FileSystemAdapter) {
     "draw_sprite",
     {
       title: "Draw a sprite",
-      description: "A complete brief for drawing one sprite (or a short animation) with this editor's tools.",
+      description: "A complete brief for drawing one sprite (or a short animation) with this editor's tools. Start from a preset (hero-walk, slime, chest, ...) and/or a style pack (pico8, gameboy, ...), then override anything.",
       argsSchema: {
-        subject: z.string().describe("What to draw, e.g. 'a red slime with a tiny crown'"),
-        size: z.string().optional().describe("Pixels per frame, '32' or '32x24' (default 32)"),
-        frames: z.string().optional().describe("Number of animation frames, 1-16 (default 1)"),
+        subject: z.string().optional().describe("What to draw, e.g. 'a red slime with a tiny crown'. Optional when a preset is given."),
+        preset: z.string().optional().describe("Preset id or name, e.g. 'hero-walk', 'slime', 'treasure chest'"),
+        style_pack: z.string().optional().describe("Style pack id or name: snes-rpg, nes, gameboy, pico8, sweetie16, dark-dungeon, bright-cute, neon"),
+        size: z.string().optional().describe("Pixels per frame, '32' or '32x24' (default: the preset's, else 32)"),
+        frames: z.string().optional().describe("Number of animation frames, 1-16 (default: the preset's, else 1)"),
         style: z.string().optional().describe("nes, gameboy, snes or modern (default snes)"),
         sheet_id: z.string().optional().describe("Id for the new sheet (default made from the subject)"),
       },
     },
-    ({ subject, size, frames, style, sheet_id }) => {
-      const [w, h] = (size ?? "32").toLowerCase().split("x").map((n) => parseInt(n, 10));
+    ({ subject, preset, style_pack, size, frames, style, sheet_id }) => {
+      const reply = (text: string) => ({ messages: [{ role: "user" as const, content: { type: "text" as const, text } }] });
+      const pr = preset ? findSubjectPreset(preset) : undefined;
+      if (preset && !pr) return reply(`Unknown preset "${preset}". Use one of the preset ids from the editor's Create tab, for example hero-walk, slime, chest, tree.`);
+      const pack = style_pack ? findStylePack(style_pack) : undefined;
+      if (style_pack && !pack) return reply(`Unknown style pack "${style_pack}". Available: snes-rpg, nes, gameboy, pico8, sweetie16, dark-dungeon, bright-cute, neon.`);
+      const text = subject ?? pr?.spec.subject;
+      if (!text) return reply("Tell me what to draw: give a subject or a preset.");
+      const [w, h] = (size ?? "").toLowerCase().split("x").map((n) => parseInt(n, 10));
       const parsed = SpriteSpecSchema.safeParse({
-        subject,
-        width: w || 32,
-        height: h || w || 32,
-        frames: frames ? parseInt(frames, 10) : 1,
-        style: style ?? "snes",
-        sheetId: sheet_id ?? slugify(subject),
+        width: pr?.spec.width ?? 32,
+        height: pr?.spec.height ?? pr?.spec.width ?? 32,
+        ...pr?.spec,
+        ...pack?.spec,
+        subject: text,
+        ...(w ? { width: w, height: h || w } : {}),
+        ...(frames ? { frames: parseInt(frames, 10) } : {}),
+        ...(style ? { style } : {}),
+        sheetId: sheet_id ?? (preset ? slugify(pr!.id) : slugify(text)),
       });
-      const text = parsed.success ? buildSpritePrompt(parsed.data) : `Could not build the brief: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`;
-      return { messages: [{ role: "user" as const, content: { type: "text" as const, text } }] };
+      return reply(parsed.success ? buildSpritePrompt(parsed.data) : `Could not build the brief: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
     },
   );
 

@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { create } from "zustand";
-import { RequestSchema, SpriteSpecSchema, buildSpritePrompt, slugify, type SpriteRequest } from "@mse/core";
+import { RequestSchema, STYLE_PACKS, SUBJECT_CATEGORIES, SUBJECT_PRESETS, SpriteSpecSchema, buildSpritePrompt, slugify, type SpecPatch, type SpriteRequest } from "@mse/core";
+import { AiSettingsPanel, GenerationProgress } from "../components/GeneratePanel";
 import { Icon } from "../components/Icon";
 import { confirmAsk } from "../lib/ask";
+import { generateSprite } from "../lib/generate";
+import { useGen } from "../state/gen";
 import { useMcp } from "../state/mcp";
 import { store, useProject } from "../state/project";
 import { useUi } from "../state/ui";
@@ -23,13 +26,15 @@ interface Draft {
   light: string;
   notes: string;
   sheetId: string;
+  /** Preferred id when a preset was chosen (its own id, e.g. "slime"), until the subject is edited. */
+  idBase: string;
   /** Once the user types an id themselves we stop deriving it from the subject. */
   sheetIdTouched: boolean;
 }
 
 const EMPTY: Draft = {
   subject: "", kind: "creature", width: 32, height: 32, frames: 1, motion: "", style: "snes", colors: 16, palette: "",
-  outline: "dark", shading: "cel", view: "side", light: "top-left", notes: "", sheetId: "", sheetIdTouched: false,
+  outline: "dark", shading: "cel", view: "side", light: "top-left", notes: "", sheetId: "", idBase: "", sheetIdTouched: false,
 };
 
 /** Kept outside the component so switching tabs does not lose what you typed. */
@@ -39,12 +44,11 @@ const useDraft = create<{ d: Draft; set(p: Partial<Draft>): void; reset(d?: Part
   reset: (d) => set({ d: { ...EMPTY, ...d } }),
 }));
 
-const QUICK: { label: string; draft: Partial<Draft> }[] = [
-  { label: "Hero, idle", draft: { subject: "a young adventurer with a blue cape holding a short sword", kind: "character", width: 32, height: 32, frames: 4, motion: "breathing idle: chest and cape move up and down by one pixel" } },
-  { label: "Apple tree", draft: { subject: "a leafy apple tree with a thick trunk and red apples", kind: "tree", width: 48, height: 64, frames: 1, view: "three-quarter" } },
-  { label: "Treasure chest", draft: { subject: "a wooden treasure chest with gold trim, closed", kind: "item", width: 32, height: 32, frames: 1, view: "three-quarter" } },
-  { label: "Slime, bounce", draft: { subject: "a friendly green slime with two eyes", kind: "creature", width: 24, height: 24, frames: 4, motion: "squash and stretch while bouncing in place" } },
-];
+/** Turn a core spec patch into draft fields (the draft keeps the palette as editable text). */
+function patchToDraft(p: SpecPatch, d: Draft): Partial<Draft> {
+  const { palette, ...rest } = p;
+  return { ...(rest as Partial<Draft>), ...(palette ? { palette: palette.join(", ") } : {}) };
+}
 
 const SIZES = [16, 24, 32, 48, 64];
 const ago = (t: number) => {
@@ -75,6 +79,14 @@ export function CreateView() {
   const mcp = useMcp();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const [cat, setCat] = useState<string>("All");
+  const [search, setSearch] = useState("");
+  const [pack, setPack] = useState("");
+  const gen = useGen();
+  const presets = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return SUBJECT_PRESETS.filter((x) => (cat === "All" || x.category === cat) && (!q || `${x.label} ${x.spec.subject}`.toLowerCase().includes(q)));
+  }, [cat, search]);
   const [, tick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => tick((n) => n + 1), 5000); // keeps "5 s ago" fresh
@@ -83,10 +95,11 @@ export function CreateView() {
 
   // sheet id: derived from the subject until the user edits it; never silently collide with an existing sheet
   const derived = useMemo(() => {
-    let id = slugify(d.subject);
-    for (let n = 2; sheets[id]; n++) id = `${slugify(d.subject)}-${n}`;
+    const base = d.idBase || slugify(d.subject);
+    let id = base;
+    for (let n = 2; sheets[id]; n++) id = `${base}-${n}`;
     return id;
-  }, [d.subject, sheets]);
+  }, [d.subject, d.idBase, sheets]);
   const sheetId = d.sheetIdTouched ? d.sheetId : derived;
   const exists = !!sheets[sheetId];
 
@@ -118,6 +131,13 @@ export function CreateView() {
     }
   };
 
+  const generate = () => {
+    if (!parsed.success || problem) return;
+    setError(undefined);
+    setNotice(undefined);
+    void generateSprite(parsed.data, prompt);
+  };
+
   const list = Object.values(requests).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const waiting = list.filter((r) => r.status === "pending").length;
 
@@ -137,10 +157,39 @@ export function CreateView() {
     <div className="view create">
       <aside className="side">
         <h3>What should Claude draw?</h3>
-        <textarea rows={3} placeholder="A red slime with a tiny golden crown" value={d.subject} onChange={(e) => set({ subject: e.target.value })} />
-        <div className="chips" aria-label="Quick starts">
-          {QUICK.map((q) => <button key={q.label} className="chip" onClick={() => reset({ ...q.draft })}>{q.label}</button>)}
+        <textarea rows={3} placeholder="A red slime with a tiny golden crown" value={d.subject} onChange={(e) => set({ subject: e.target.value, idBase: "" })} />
+        <h3>Presets</h3>
+        <input type="search" placeholder="Search presets: slime, torch, chest…" aria-label="Search presets" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <div className="chips" role="tablist" aria-label="Preset groups">
+          {["All", ...SUBJECT_CATEGORIES].map((c) => (
+            <button key={c} role="tab" aria-selected={cat === c} className={`chip ${cat === c ? "on" : ""}`} onClick={() => setCat(c)}>{c}</button>
+          ))}
         </div>
+        <div className="presets">
+          {presets.map((x) => (
+            <button key={x.id} title={x.spec.subject} onClick={() => set({ ...patchToDraft({ motion: "", ...x.spec }, d), idBase: x.id, sheetIdTouched: false })}>
+              <span>{x.label}</span>
+              <small>{x.spec.width}×{x.spec.height}{(x.spec.frames ?? 1) > 1 ? ` · ${x.spec.frames}f` : ""}</small>
+            </button>
+          ))}
+          {presets.length === 0 && <p className="muted">No preset matches “{search}”.</p>}
+        </div>
+        <label>Style pack
+          <select
+            value={pack}
+            onChange={(e) => {
+              setPack(e.target.value);
+              const sp = STYLE_PACKS.find((x) => x.id === e.target.value);
+              if (!sp) return;
+              const note = sp.spec.notes;
+              set({ ...patchToDraft({ ...sp.spec, notes: undefined }, d), ...(note ? { notes: d.notes.includes(note) ? d.notes : [d.notes, note].filter(Boolean).join(" ") } : {}) });
+            }}
+          >
+            <option value="">Custom</option>
+            {STYLE_PACKS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </select>
+          {pack && <small className="muted">{STYLE_PACKS.find((x) => x.id === pack)?.description}</small>}
+        </label>
 
         <h3>Size</h3>
         <div className="row">
@@ -211,7 +260,15 @@ export function CreateView() {
             <h2>Prompt</h2>
             <div className="row">
               <button disabled={!!problem} onClick={copy}><Icon name="copy" size={15} /> Copy prompt</button>
-              <button className="primary" disabled={!!problem} onClick={queue}><Icon name="sparkle" size={15} /> Queue for Claude</button>
+              <button disabled={!!problem} onClick={queue} title="Save it as a request that Claude picks up over MCP"><Icon name="sparkle" size={15} /> Queue for Claude</button>
+              <button
+                className="primary"
+                disabled={!!problem || gen.running || !gen.key.has}
+                onClick={generate}
+                title={gen.key.has ? "Draw it now with your API key" : "Add an API key under AI generation first"}
+              >
+                <Icon name="sparkle" size={15} /> {gen.running ? "Drawing…" : "Generate now"}
+              </button>
             </div>
           </header>
           {problem ? <p className="muted">{problem}</p> : <pre className="prompt-text">{prompt}</pre>}
@@ -226,6 +283,9 @@ export function CreateView() {
             <button className="link" onClick={() => setConnect(true)}>{mcp.available ? "MCP status and setup" : "How to connect Claude"}</button>
           </p>
         </section>
+
+        <GenerationProgress />
+        <AiSettingsPanel />
 
         <section className="panel">
           <header className="panel-head">

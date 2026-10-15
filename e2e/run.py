@@ -11,7 +11,7 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(HERE, "out")
-SUITES = ["boot.py", "editor_basics.py", "mcp_and_assets.py", "features.py", "create.py"]
+SUITES = ["boot.py", "editor_basics.py", "mcp_and_assets.py", "features.py", "create.py", "create_ai.py"]
 PREVIEW_SUITES = {"boot.py"}  # run against the production bundle (`vite preview`), not the dev server
 PORT = 5173  # vite.config.ts uses strictPort
 

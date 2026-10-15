@@ -17,7 +17,7 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_fs::FsExt;
 
-const BASE_PORT: u16 = 17877;
+const DEFAULT_PORT: u16 = 17877;
 const PORT_TRIES: u16 = 20;
 const MAX_BODY: u64 = 25 * 1024 * 1024;
 const REPLY_TIMEOUT: Duration = Duration::from_secs(120);
@@ -87,6 +87,39 @@ fn mcp_restart(app: AppHandle, state: State<Mcp>) -> McpStatus {
 fn mcp_reply(state: State<Mcp>, id: u64, body: String) {
     if let Some(tx) = state.pending.lock().unwrap().remove(&id) {
         let _ = tx.send(body);
+    }
+}
+
+const KEYCHAIN_SERVICE: &str = "com.monspire.editor";
+
+/// Secrets live in the OS credential store, never in files or the webview's storage. Names are restricted so
+/// the webview can only reach the entries this app creates.
+fn secret_entry(name: &str) -> Result<keyring::Entry, String> {
+    if !name.starts_with("mse_") || name.len() > 64 || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err("Invalid secret name".into());
+    }
+    keyring::Entry::new(KEYCHAIN_SERVICE, name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn secret_set(name: String, value: String) -> Result<(), String> {
+    secret_entry(&name)?.set_password(&value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn secret_get(name: String) -> Result<Option<String>, String> {
+    match secret_entry(&name)?.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn secret_delete(name: String) -> Result<(), String> {
+    match secret_entry(&name)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
     }
 }
 
@@ -168,15 +201,21 @@ fn stop_mcp_server(state: &Mcp) {
 }
 
 /// Listen on `preferred` if given (retrying briefly while the old socket closes), else the first free port from BASE_PORT.
+/// 17877 unless `MSE_MCP_PORT` says otherwise (tests use their own port so they never take over a real session).
+fn base_port() -> u16 {
+    std::env::var("MSE_MCP_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_PORT)
+}
+
 fn start_mcp_server(app: AppHandle, preferred: Option<u16>) {
+    let base = base_port();
     let try_bind = |port: u16| tiny_http::Server::http(("127.0.0.1", port)).ok();
     let bound = preferred
         .and_then(|p| {
             (0..15).find_map(|_| try_bind(p).map(|s| (p, s)).or_else(|| (thread::sleep(Duration::from_millis(100)), None).1))
         })
-        .or_else(|| (BASE_PORT..BASE_PORT + PORT_TRIES).find_map(|p| try_bind(p).map(|s| (p, s))));
+        .or_else(|| (base..base + PORT_TRIES).find_map(|p| try_bind(p).map(|s| (p, s))));
     let Some((port, server)) = bound else {
-        eprintln!("Mon Spire Editor: no free port in {}..{} for the MCP server", BASE_PORT, BASE_PORT + PORT_TRIES);
+        eprintln!("Mon Spire Editor: no free port in {}..{} for the MCP server", base, base + PORT_TRIES);
         return;
     };
     let server = Arc::new(server);
@@ -206,9 +245,10 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_persisted_scope::init())
+        .plugin(tauri_plugin_http::init())
         .manage(Mcp::default())
         .manage(InitialProject(initial.clone()))
-        .invoke_handler(tauri::generate_handler![mcp_port, mcp_status, mcp_stop, mcp_start, mcp_restart, mcp_reply, initial_project])
+        .invoke_handler(tauri::generate_handler![mcp_port, mcp_status, mcp_stop, mcp_start, mcp_restart, mcp_reply, initial_project, secret_set, secret_get, secret_delete])
         .setup(move |app| {
             if let Some(dir) = &initial {
                 // an explicitly passed folder is trusted like one picked in the dialog

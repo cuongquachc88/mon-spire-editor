@@ -47,6 +47,7 @@ describe("slugify", () => {
     expect(slugify("Red Slime!")).toBe("red-slime");
     expect(slugify("Cây táo")).toBe("cay-tao");
     expect(slugify("!!!")).toBe("sprite");
+    expect(slugify("a friendly green slime with two eyes")).toBe("a-friendly-green-slime-with-two"); // cut at 32 chars, no trailing dash
   });
 });
 
