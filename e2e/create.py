@@ -41,25 +41,25 @@ with sync_playwright() as pw:
     check("a valid palette is used exactly", "exactly this palette (add nothing else): #220000, #ff0000" in pg.inner_text(".prompt-text"))
 
     pg.fill("label:has-text('Sheet id') input", "terrain")
-    check("an id that already exists is refused with a reason", 'already exists' in pg.inner_text(".panel") and pg.locator("button:has-text('Queue for Claude')").is_disabled())
+    check("an id that already exists is refused with a reason", 'already exists' in pg.inner_text(".panel") and pg.locator("button:has-text('Queue for MCP client')").is_disabled())
     pg.fill("label:has-text('Sheet id') input", "slime")
     prompt_now = pg.inner_text(".prompt-text")
     pg.click("button:has-text('Copy prompt')"); time.sleep(0.3)
     check("copy puts the whole prompt on the clipboard", pg.evaluate("navigator.clipboard.readText()") == prompt_now)
 
-    pg.click("button:has-text('Queue for Claude')"); time.sleep(1.0)
+    pg.click("button:has-text('Queue for MCP client')"); time.sleep(1.0)
     reqs = read("project.json")["requests"]
     check("queue writes a request file and registers it", len(reqs) == 1 and os.path.exists(f"{P}/requests/{reqs[0]}.json"), str(reqs))
     saved = read(f"requests/{reqs[0]}.json")
     check("the request keeps the spec and the exact prompt", saved["status"] == "pending" and saved["spec"]["sheetId"] == "slime" and saved["spec"]["frames"] == 4 and saved["prompt"] == prompt_now)
-    check("UI lists it as waiting for Claude", "Waiting for Claude" in pg.inner_text(".requests"))
+    check("UI lists it as waiting for an MCP client", "Waiting for an MCP client" in pg.inner_text(".requests"))
     check("form is cleared after queueing", pg.input_value("textarea >> nth=0") == "")
 
-    # Claude's side, through the real stdio MCP server
+    # The MCP client's side, through the real stdio MCP server
     r = mcp("request_claim")
     check("claude can claim it and gets the prompt", not r["isError"] and json.loads(r["text"])["sheetId"] == "slime" and "sprite_create" in json.loads(r["text"])["prompt"], r["text"][:120])
-    pg.wait_for_function("document.querySelector('.requests').innerText.includes('Claude is drawing')", timeout=8000)
-    check("UI switches to 'Claude is drawing' on its own", True)
+    pg.wait_for_function("document.querySelector('.requests').innerText.includes('Being drawn')", timeout=8000)
+    check("UI switches to 'Being drawn' on its own", True)
 
     early = mcp("request_complete", {"id": reqs[0]})
     check("completing before drawing is refused", early["isError"] and "does not exist yet" in early["text"], early["text"])
@@ -68,7 +68,7 @@ with sync_playwright() as pw:
     done = mcp("request_complete", {"id": reqs[0], "note": "green blob"})
     check("claude completes the request", not done["isError"], done["text"])
     pg.wait_for_function("document.querySelector('.requests').innerText.includes('Done')", timeout=8000)
-    check("UI shows Done with Claude's note", "green blob" in pg.inner_text(".requests"))
+    check("UI shows Done with the client's note", "green blob" in pg.inner_text(".requests"))
     pg.screenshot(path=f"{S}/create.png")
 
     pg.click("button:has-text('Open sprite')"); pg.wait_for_selector("canvas.checker"); time.sleep(0.4)
@@ -76,11 +76,11 @@ with sync_playwright() as pw:
 
     # failing a request
     pg.click(".rail >> text=Create")
-    pg.fill("textarea >> nth=0", "something vague"); pg.click("button:has-text('Queue for Claude')"); time.sleep(0.8)
+    pg.fill("textarea >> nth=0", "something vague"); pg.click("button:has-text('Queue for MCP client')"); time.sleep(0.8)
     nid = [x for x in read("project.json")["requests"] if x != reqs[0]][0]
     mcp("request_fail", {"id": nid, "reason": "Too vague: what kind of thing is it?"})
     pg.wait_for_function("document.querySelector('.requests').innerText.includes('Failed')", timeout=8000)
-    check("a failed request shows Claude's reason and offers Try again", "Too vague" in pg.inner_text(".requests") and pg.locator("button:has-text('Try again')").count() == 1)
+    check("a failed request shows the client's reason and offers Try again", "Too vague" in pg.inner_text(".requests") and pg.locator("button:has-text('Try again')").count() == 1)
     pg.click("button:has-text('Try again')"); time.sleep(0.8)
     check("Try again puts it back in the queue", read(f"requests/{nid}.json")["status"] == "pending")
 

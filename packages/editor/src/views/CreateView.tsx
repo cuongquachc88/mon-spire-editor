@@ -66,8 +66,8 @@ function toSpec(d: Draft, sheetId: string) {
 }
 
 const STATUS: Record<SpriteRequest["status"], string> = {
-  pending: "Waiting for Claude",
-  in_progress: "Claude is drawing",
+  pending: "Waiting for an MCP client",
+  in_progress: "Being drawn",
   done: "Done",
   failed: "Failed",
 };
@@ -111,7 +111,7 @@ export function CreateView() {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(prompt);
-      setNotice("Prompt copied. Paste it into Claude.");
+      setNotice("Prompt copied. Paste it into your MCP client.");
     } catch {
       setError("Could not copy automatically. Select the prompt text and copy it.");
     }
@@ -125,7 +125,7 @@ export function CreateView() {
       await store.saveRequest(req);
       await useProject.getState().load();
       setError(undefined);
-      setNotice(`Queued. In Claude, ask it to do the pending sprite requests.`);
+      setNotice("Queued. In your MCP client, ask it to do the pending sprite requests.");
       reset();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -147,7 +147,7 @@ export function CreateView() {
     await useProject.getState().load();
   };
   const remove = async (r: SpriteRequest) => {
-    if (r.status === "in_progress" && !(await confirmAsk("Claude is working on this request. Remove it anyway?"))) return;
+    if (r.status === "in_progress" && !(await confirmAsk("This request is being drawn. Remove it anyway?"))) return;
     await store.remove("requests", r.id);
     await useProject.getState().load();
   };
@@ -157,7 +157,7 @@ export function CreateView() {
   return (
     <div className="view create">
       <aside className="side">
-        <h3>What should Claude draw?</h3>
+        <h3>What should be drawn?</h3>
         <textarea rows={3} placeholder="A red slime with a tiny golden crown" value={d.subject} onChange={(e) => set({ subject: e.target.value, idBase: "" })} />
         <h3>Presets</h3>
         <input type="search" placeholder="Search presets: slime, torch, chest…" aria-label="Search presets" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -261,7 +261,7 @@ export function CreateView() {
             <h2>Prompt</h2>
             <div className="row">
               <button disabled={!!problem} onClick={copy}><Icon name="copy" size={15} /> Copy prompt</button>
-              <button disabled={!!problem} onClick={queue} title="Save it as a request that Claude picks up over MCP"><Icon name="sparkle" size={15} /> Queue for Claude</button>
+              <button disabled={!!problem} onClick={queue} title="Save it as a request that an MCP client picks up"><Icon name="sparkle" size={15} /> Queue for MCP client</button>
               <button
                 className="primary"
                 disabled={!!problem || gen.running || !gen.key.has}
@@ -278,9 +278,9 @@ export function CreateView() {
           <p className="muted small-note">
             {isTauri()
               ? mcp.lastAt
-                ? `Claude last used a tool ${ago(mcp.lastAt)} (${mcp.lastTool}).`
+                ? `An MCP client last used a tool ${ago(mcp.lastAt)} (${mcp.lastTool}).`
                 : "No MCP client has called this app yet."
-              : "Copy the prompt into Claude, or queue it and let Claude pick it up over MCP."}{" "}
+              : "Copy the prompt into your MCP client, or queue it and let a client pick it up over MCP."}{" "}
             <button className="link" onClick={() => setConnect(true)}>{isTauri() ? "MCP status and setup" : "MCP setup"}</button>
           </p>
         </section>
@@ -294,7 +294,7 @@ export function CreateView() {
           </header>
           {waiting > 0 && (
             <p className="muted">
-              Tell Claude: <b>“Do the pending sprite requests in Mon Spire Editor.”</b> (In Claude Code you can also run the <code>do_pending_requests</code> prompt from the MCP menu.)
+              Tell your MCP client: <b>“Do the pending sprite requests in Mon Spire Editor.”</b> (Most clients also list the <code>do_pending_requests</code> prompt in their MCP menu.)
             </p>
           )}
           {list.length === 0 && <p className="muted">Nothing queued yet. Build a prompt on the left and queue it.</p>}
