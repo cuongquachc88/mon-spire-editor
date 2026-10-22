@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   SetPixelsCommand,
   createImage,
@@ -33,6 +33,13 @@ const PALETTE = [
   "#ff004d", "#ffa300", "#ffec27", "#00e436", "#29adff", "#83769c", "#ff77a8", "#ffccaa",
 ];
 
+/** Zoom steps for the buttons and the wheel; below 1 the image is shown smaller than its pixel size. */
+const ZOOM_LEVELS = [0.125, 0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
+/** Browsers fail on very large canvases, so the zoomed image is kept under this many pixels per side. */
+const MAX_CANVAS = 8192;
+
+const zoomLabel = (z: number) => (z >= 1 ? `${+z.toFixed(1)}×` : `${Math.round(z * 100)}%`);
+
 function blockCells(p: Point, size: number): Point[] {
   const off = Math.floor((size - 1) / 2);
   const out: Point[] = [];
@@ -63,10 +70,44 @@ export function PixelView() {
   const [error, setError] = useState<string>();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLElement>(null);
+  /** Image point that must stay under the cursor (viewport offset cx,cy) while the zoom changes. */
+  const anchor = useRef<{ ix: number; iy: number; cx: number; cy: number }>();
+  const wheelAcc = useRef(0);
   const stroke = useRef<{ key: string; last: Point; start: Point } | null>(null);
   const preview = useRef<Point[]>([]);
 
   useDoc(doc);
+
+  const maxZoomFor = (w: number, h: number) => Math.max(1, Math.min(64, MAX_CANVAS / Math.max(w, h)));
+  /** Largest zoom that shows the whole image in the work area (whole numbers once it is 1× or more). */
+  const fitZoom = (w: number, h: number) => {
+    const el = wrapRef.current;
+    const aw = Math.max(64, (el?.clientWidth ?? 680) - 40);
+    const ah = Math.max(64, (el?.clientHeight ?? 680) - 40);
+    const f = Math.min(aw / w, ah / h, maxZoomFor(w, h));
+    return f >= 1 ? Math.floor(f) : Math.max(0.125, Math.floor(f * 100) / 100);
+  };
+  /** Move to the next zoom step, keeping the image point under (clientX, clientY) fixed; no point = view centre. */
+  const stepZoom = (dir: 1 | -1, at?: { x: number; y: number }) => {
+    if (!doc) return;
+    const max = maxZoomFor(doc.data.width, doc.data.height);
+    const levels = ZOOM_LEVELS.filter((l) => l <= max);
+    const next = dir > 0 ? levels.find((l) => l > zoom + 1e-6) : [...levels].reverse().find((l) => l < zoom - 1e-6);
+    if (next !== undefined) setZoomAt(next, at);
+  };
+  const setZoomAt = (next: number, at?: { x: number; y: number }) => {
+    const canvas = canvasRef.current;
+    const el = wrapRef.current;
+    if (canvas && el) {
+      const wr = el.getBoundingClientRect();
+      const cr = canvas.getBoundingClientRect();
+      const px = at?.x ?? wr.left + el.clientWidth / 2;
+      const py = at?.y ?? wr.top + el.clientHeight / 2;
+      anchor.current = { ix: (px - cr.left) / zoom, iy: (py - cr.top) / zoom, cx: px - wr.left, cy: py - wr.top };
+    }
+    setZoom(next);
+  };
 
   const saveFor = useCallback(
     (sheetId: string, imagePath: string) => async (img: PixelImage) => {
@@ -95,7 +136,7 @@ export function PixelView() {
     const copy: PixelImage = { width: img.width, height: img.height, data: img.data.slice() };
     docSheet.current = target;
     setDoc(new Doc(copy, saveFor(target, sheet.image)));
-    setZoom(Math.max(2, Math.min(32, Math.floor(640 / Math.max(img.width, img.height)))));
+    setZoom(fitZoom(img.width, img.height));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target, sheets, images, externalRev]);
 
@@ -111,19 +152,28 @@ export function PixelView() {
     docSheet.current = id;
     useUi.setState({ pixelTarget: id });
     setDoc(d);
-    setZoom(Math.max(2, Math.min(32, Math.floor(640 / Math.max(newForm.w, newForm.h)))));
+    setZoom(fitZoom(newForm.w, newForm.h));
     d.touch(); // write the blank file so the asset exists
   };
 
   // ---- rendering -------------------------------------------------------------------------
   const sheet = target ? sheets[target] : undefined;
   const version = doc?.getVersion();
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !doc) return;
     const { width, height } = doc.data;
-    canvas.width = width * zoom;
-    canvas.height = height * zoom;
+    canvas.width = Math.max(1, Math.round(width * zoom));
+    canvas.height = Math.max(1, Math.round(height * zoom));
+    const zx = canvas.width / width;
+    const zy = canvas.height / height;
+    const el = wrapRef.current;
+    const a = anchor.current;
+    if (a && el) {
+      anchor.current = undefined;
+      el.scrollLeft = canvas.offsetLeft + a.ix * zx - a.cx;
+      el.scrollTop = canvas.offsetTop + a.iy * zy - a.cy;
+    }
     const ctx = canvas.getContext("2d")!;
     ctx.imageSmoothingEnabled = false;
     const off = new OffscreenCanvas(width, height);
@@ -134,19 +184,19 @@ export function PixelView() {
     // Tool preview (shapes in progress)
     if (preview.current.length) {
       ctx.fillStyle = tool === "eraser" ? "rgba(255,255,255,0.5)" : packedToHex(color);
-      for (const p of mirrorPts(preview.current, width, height)) ctx.fillRect(p.x * zoom, p.y * zoom, zoom, zoom);
+      for (const p of mirrorPts(preview.current, width, height)) ctx.fillRect(p.x * zx, p.y * zy, zx, zy);
     }
     if (zoom >= 8) {
       ctx.strokeStyle = "rgba(128,128,128,0.35)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      for (let x = 0; x <= width; x++) (ctx.moveTo(x * zoom + 0.5, 0), ctx.lineTo(x * zoom + 0.5, canvas.height));
-      for (let y = 0; y <= height; y++) (ctx.moveTo(0, y * zoom + 0.5), ctx.lineTo(canvas.width, y * zoom + 0.5));
+      for (let x = 0; x <= width; x++) (ctx.moveTo(x * zx + 0.5, 0), ctx.lineTo(x * zoom + 0.5, canvas.height));
+      for (let y = 0; y <= height; y++) (ctx.moveTo(0, y * zy + 0.5), ctx.lineTo(canvas.width, y * zy + 0.5));
       ctx.stroke();
     }
     if (showFrames && sheet) {
       ctx.strokeStyle = "rgba(0,200,255,0.9)";
-      for (const f of sheet.frames) ctx.strokeRect(f.rect.x * zoom + 0.5, f.rect.y * zoom + 0.5, f.rect.w * zoom - 1, f.rect.h * zoom - 1);
+      for (const f of sheet.frames) ctx.strokeRect(f.rect.x * zx + 0.5, f.rect.y * zy + 0.5, f.rect.w * zx - 1, f.rect.h * zy - 1);
     }
     if (mirrorX || mirrorY) {
       ctx.strokeStyle = "rgba(255,122,107,0.9)"; // coral = the mirrored half
@@ -157,9 +207,9 @@ export function PixelView() {
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    if (hover) {
+    if (hover && zx >= 3) {
       ctx.strokeStyle = "#fff";
-      ctx.strokeRect(hover.x * zoom + 0.5, hover.y * zoom + 0.5, zoom - 1, zoom - 1);
+      ctx.strokeRect(hover.x * zx + 0.5, hover.y * zy + 0.5, zx - 1, zy - 1);
     }
   }, [doc, version, zoom, hover, showFrames, sheet, color, tool, mirrorX, mirrorY]);
 
@@ -181,7 +231,8 @@ export function PixelView() {
   // ---- tools -----------------------------------------------------------------------------
   const cellAt = (e: React.PointerEvent): Point => {
     const r = canvasRef.current!.getBoundingClientRect();
-    return { x: Math.floor((e.clientX - r.left) / zoom), y: Math.floor((e.clientY - r.top) / zoom) };
+    const { width, height } = doc!.data;
+    return { x: Math.floor(((e.clientX - r.left) / r.width) * width), y: Math.floor(((e.clientY - r.top) / r.height) * height) };
   };
 
   /** Add the mirrored copies of each point when symmetry is on (mirror axes are the image centre lines). */
@@ -287,6 +338,14 @@ export function PixelView() {
       } else if (mod && e.key.toLowerCase() === "y") {
         e.preventDefault();
         doc.redo();
+      } else if (!mod && (e.key === "+" || e.key === "=")) {
+        stepZoom(1);
+      } else if (!mod && e.key === "-") {
+        stepZoom(-1);
+      } else if (!mod && e.key === "0") {
+        setZoomAt(fitZoom(doc.data.width, doc.data.height));
+      } else if (!mod && e.key === "1") {
+        setZoomAt(1);
       } else if (!mod) {
         const t = TOOLS.find((x) => x.key === e.key.toLowerCase());
         if (t) setTool(t.id);
@@ -294,7 +353,24 @@ export function PixelView() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [doc]);
+  });
+
+  // ⌘/Ctrl + wheel (and trackpad pinch, which reports Ctrl) zooms around the cursor; a plain wheel scrolls.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !doc) return;
+      e.preventDefault();
+      wheelAcc.current += e.deltaY;
+      if (Math.abs(wheelAcc.current) < 40) return;
+      const dir = wheelAcc.current < 0 ? 1 : -1;
+      wheelAcc.current = 0;
+      stepZoom(dir, { x: e.clientX, y: e.clientY });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  });
 
   const sheetIds = useMemo(() => Object.keys(sheets), [sheets]);
   const swatches = useMemo(() => PALETTE.map(hexToPacked), []);
@@ -329,7 +405,22 @@ export function PixelView() {
           ))}
         </div>
         <label>Brush {size}px <input type="range" min={1} max={8} value={size} onChange={(e) => setSize(+e.target.value)} /></label>
-        <label>Zoom {zoom}× <input type="range" min={1} max={40} value={zoom} onChange={(e) => setZoom(+e.target.value)} /></label>
+        <label>Zoom {zoomLabel(zoom)}
+          <input
+            type="range"
+            min={0}
+            max={ZOOM_LEVELS.length - 1}
+            value={ZOOM_LEVELS.reduce((best, l, i) => (Math.abs(l - zoom) < Math.abs(ZOOM_LEVELS[best]! - zoom) ? i : best), 0)}
+            onChange={(e) => setZoomAt(Math.min(ZOOM_LEVELS[+e.target.value]!, doc ? maxZoomFor(doc.data.width, doc.data.height) : 64))}
+          />
+        </label>
+        <div className="row zoom-row">
+          <button disabled={!doc} onClick={() => stepZoom(-1)} title="Zoom out (-)" aria-label="Zoom out">−</button>
+          <button disabled={!doc} onClick={() => stepZoom(1)} title="Zoom in (+)" aria-label="Zoom in">+</button>
+          <button disabled={!doc} onClick={() => doc && setZoomAt(fitZoom(doc.data.width, doc.data.height))} title="Fit the image in the view (0)">Fit</button>
+          <button disabled={!doc} onClick={() => setZoomAt(1)} title="Actual size (1)">1:1</button>
+        </div>
+        <p className="muted hint">⌘/Ctrl + scroll zooms at the cursor</p>
         <label><input type="checkbox" checked={showFrames} onChange={(e) => setShowFrames(e.target.checked)} /> Show frame grid</label>
         <h3>Symmetry and view</h3>
         <div className="row">
@@ -357,7 +448,7 @@ export function PixelView() {
         {doc && <p className="muted">{doc.saveError ? `Save failed: ${doc.saveError}` : doc.isDirty ? "Saving…" : "Saved"}</p>}
       </aside>
 
-      <main className="canvas-wrap">
+      <main className="canvas-wrap" ref={wrapRef}>
         {doc ? (
           <div className="pixel-stage">
             <canvas

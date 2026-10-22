@@ -79,6 +79,8 @@ pnpm mcp projects/demo        # path is relative to the repo root; use an absolu
 Keys: `B` brush/pencil · `E` eraser · `L` line · `R` rect (hold Shift for an outline) · `G` fill · `I` picker ·
 `T` terrain (map) · `N` entity (map) · `Ctrl/⌘+Z` undo · `Shift+Ctrl/⌘+Z` or `Ctrl+Y` redo · mouse wheel zooms the map ·
 hold Space or use the right/middle button to pan · Shift-click in the tile palette selects a block to stamp.
+In the Pixel tab `+` / `-` zoom, `0` fits the image in the view, `1` shows it at actual size, and ⌘/Ctrl + scroll (or a
+trackpad pinch) zooms around the cursor; large sprites can be shown below 100%.
 
 Edits save automatically. If something outside the editor changes a file (an MCP client, git, another tool), the editor
 reloads it and the top bar says which file changed.
