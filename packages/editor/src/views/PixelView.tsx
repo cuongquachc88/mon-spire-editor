@@ -14,6 +14,7 @@ import { Icon, type IconName } from "../components/Icon";
 import { Doc, useDoc } from "../state/doc";
 import { fs, store, useProject } from "../state/project";
 import { useUi } from "../state/ui";
+import { ZOOM_LEVELS, fitZoom as fitZoomFor, maxZoomFor, nearestLevel, nextZoom, zoomLabel } from "../lib/zoom";
 
 type Tool = "pencil" | "eraser" | "line" | "rect" | "fill" | "picker";
 
@@ -32,13 +33,6 @@ const PALETTE = [
   "#000000", "#1d2b53", "#7e2553", "#008751", "#ab5236", "#5f574f", "#c2c3c7", "#fff1e8",
   "#ff004d", "#ffa300", "#ffec27", "#00e436", "#29adff", "#83769c", "#ff77a8", "#ffccaa",
 ];
-
-/** Zoom steps for the buttons and the wheel; below 1 the image is shown smaller than its pixel size. */
-const ZOOM_LEVELS = [0.125, 0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
-/** Browsers fail on very large canvases, so the zoomed image is kept under this many pixels per side. */
-const MAX_CANVAS = 8192;
-
-const zoomLabel = (z: number) => (z >= 1 ? `${+z.toFixed(1)}×` : `${Math.round(z * 100)}%`);
 
 function blockCells(p: Point, size: number): Point[] {
   const off = Math.floor((size - 1) / 2);
@@ -79,21 +73,14 @@ export function PixelView() {
 
   useDoc(doc);
 
-  const maxZoomFor = (w: number, h: number) => Math.max(1, Math.min(64, MAX_CANVAS / Math.max(w, h)));
-  /** Largest zoom that shows the whole image in the work area (whole numbers once it is 1× or more). */
   const fitZoom = (w: number, h: number) => {
     const el = wrapRef.current;
-    const aw = Math.max(64, (el?.clientWidth ?? 680) - 40);
-    const ah = Math.max(64, (el?.clientHeight ?? 680) - 40);
-    const f = Math.min(aw / w, ah / h, maxZoomFor(w, h));
-    return f >= 1 ? Math.floor(f) : Math.max(0.125, Math.floor(f * 100) / 100);
+    return fitZoomFor(w, h, (el?.clientWidth ?? 680) - 40, (el?.clientHeight ?? 680) - 40);
   };
   /** Move to the next zoom step, keeping the image point under (clientX, clientY) fixed; no point = view centre. */
   const stepZoom = (dir: 1 | -1, at?: { x: number; y: number }) => {
     if (!doc) return;
-    const max = maxZoomFor(doc.data.width, doc.data.height);
-    const levels = ZOOM_LEVELS.filter((l) => l <= max);
-    const next = dir > 0 ? levels.find((l) => l > zoom + 1e-6) : [...levels].reverse().find((l) => l < zoom - 1e-6);
+    const next = nextZoom(zoom, dir, doc.data.width, doc.data.height);
     if (next !== undefined) setZoomAt(next, at);
   };
   const setZoomAt = (next: number, at?: { x: number; y: number }) => {
@@ -410,7 +397,7 @@ export function PixelView() {
             type="range"
             min={0}
             max={ZOOM_LEVELS.length - 1}
-            value={ZOOM_LEVELS.reduce((best, l, i) => (Math.abs(l - zoom) < Math.abs(ZOOM_LEVELS[best]! - zoom) ? i : best), 0)}
+            value={nearestLevel(zoom)}
             onChange={(e) => setZoomAt(Math.min(ZOOM_LEVELS[+e.target.value]!, doc ? maxZoomFor(doc.data.width, doc.data.height) : 64))}
           />
         </label>
